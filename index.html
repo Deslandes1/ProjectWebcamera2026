@@ -115,9 +115,9 @@
 
         button {
             width: 100%; background: var(--accent); color: #000;
-            border: none; padding: 8px 4px; border-radius: 6px;
+            border: none; padding: 10px 4px; border-radius: 6px;
             font-weight: bold; cursor: pointer; transition: 0.2s;
-            text-transform: uppercase; font-size: 0.7rem;
+            text-transform: uppercase; font-size: 0.75rem;
         }
         button:hover { background: #00b8cc; }
         button.danger { background: var(--danger); color: white; }
@@ -168,20 +168,21 @@
                 <div class="status-badge" id="camStatus">OFFLINE</div>
             </div>
             <div id="videoContainer">
-                <div class="camera-offline" id="camOfflineText">Click "Find Cams" to allow camera access.</div>
+                <div class="camera-offline" id="camOfflineText">
+                    Click "Allow & Find Cameras" below to load your USB camera.
+                </div>
                 <video id="videoFeed" autoplay playsinline muted></video>
                 <div class="rec-indicator" id="usbRecIndicator"><div class="rec-dot"></div> REC</div>
             </div>
             <div class="controls">
-                <div style="display:flex; gap:8px;">
-                    <select id="cameraSelect" class="cam-select">
-                        <option value="">Click 'Find Cams' to load...</option>
-                    </select>
-                    <!-- NOUVO BOUTON POU CHECHE KAMERA YO -->
-                    <button onclick="getCameras()" style="width: auto; padding: 8px 12px; font-size: 0.75rem;">🔄 Find Cams</button>
-                </div>
+                <!-- THE MAGIC BUTTON -->
+                <button onclick="requestCameraPermission()" style="background: var(--gold); color: black;">🔐 Allow & Find Cameras</button>
+                
+                <select id="cameraSelect" class="cam-select" disabled>
+                    <option value="">Please allow permission first...</option>
+                </select>
                 <div class="button-grid">
-                    <button id="btnCam" onclick="toggleCamera()">Start</button>
+                    <button id="btnCam" onclick="toggleCamera()" disabled>Start</button>
                     <button id="btnMute" onclick="toggleMute()" disabled>🔇 Mute</button>
                     <button id="btnRecord" onclick="toggleRecording()" disabled>🔴 Rec</button>
                 </div>
@@ -196,7 +197,7 @@
             </div>
             <div id="externalCameraContainer">
                 <div class="camera-offline" id="extOfflineText">
-                    Paste your Proxy URL and select mode.
+                    Paste your External Stream URL (Ring/go2rtc) and click Start.
                 </div>
                 <iframe id="externalIframe" allow="autoplay; fullscreen; encrypted-media"></iframe>
                 <div class="rec-indicator" id="extRecIndicator"><div class="rec-dot"></div> REC</div>
@@ -238,7 +239,7 @@
 
     <script>
         // ==========================================
-        // 1. USB CAMERA LOGIC
+        // 1. USB CAMERA LOGIC (Permission First)
         // ==========================================
         let videoStream = null;
         const videoElement = document.getElementById('videoFeed');
@@ -250,17 +251,24 @@
         const usbRecIndicator = document.getElementById('usbRecIndicator');
         let isMuted = true;
 
-        // Nouvo fonksyon pou chèche kamera yo AK YON KLIK
-        async function getCameras() {
+        // SA A SE FONKSYON PRENSIPAL LA POU JWENN KAMERA YO
+        async function requestCameraPermission() {
             cameraSelect.innerHTML = '<option value="">Requesting permission...</option>';
+            
             try {
-                // Sa a ap fòse navigatè a mande pèmisyon an
-                await navigator.mediaDevices.getUserMedia({ video: true });
+                // 1. Fòse navigatè a mande pèmisyon an
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 
+                // 2. Fèmen stream nan imedyatman paske nou jis bezwen pèmisyon an
+                stream.getTracks().forEach(track => track.stop());
+
+                // 3. Kounye a chèche tout kamera yo (kounye a w ap wè non yo)
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(device => device.kind === 'videoinput');
                 
                 cameraSelect.innerHTML = '';
+                cameraSelect.disabled = false;
+
                 if (videoDevices.length === 0) {
                     cameraSelect.innerHTML = '<option value="">No cameras found</option>';
                     return;
@@ -269,27 +277,21 @@
                 videoDevices.forEach((device, index) => {
                     const option = document.createElement('option');
                     option.value = device.deviceId;
-                    // Bay yo yon non si navigatè a pa bay non an
                     option.text = device.label || `Camera ${index + 1}`;
                     cameraSelect.appendChild(option);
                 });
 
-                document.getElementById('camOfflineText').innerText = "Camera found! Click Start.";
+                // Aktive bouton Start lan
+                btnCam.disabled = false;
+                document.getElementById('camOfflineText').innerText = "Camera ready. Click Start.";
 
             } catch (err) { 
-                console.error(err);
+                console.error("Permission error:", err);
                 cameraSelect.innerHTML = '<option value="">Permission Denied</option>'; 
-                document.getElementById('camOfflineText').innerText = "Please allow camera access in your browser.";
+                document.getElementById('camOfflineText').innerText = "Please check the camera icon in your URL bar and allow access.";
+                alert("Could not access camera. Please check your browser settings.");
             }
         }
-
-        // Chèche kamera yo otomatikman lè paj la chaje
-        window.onload = () => {
-            getCameras();
-        };
-
-        // Si w ploge yon nouvo kamera USB, li ap mete l ajou
-        navigator.mediaDevices.ondevicechange = getCameras;
 
         async function toggleCamera() {
             if (videoStream) {
@@ -302,7 +304,7 @@
                 btnCam.innerText = "Start"; btnMute.disabled = true; btnRecord.disabled = true;
             } else {
                 const selectedId = cameraSelect.value;
-                if (!selectedId) { alert("Please select a camera from the dropdown first."); return; }
+                if (!selectedId) { alert("Please select a camera first."); return; }
 
                 try {
                     videoStream = await navigator.mediaDevices.getUserMedia({ 
@@ -316,8 +318,8 @@
                     camStatus.innerText = "LIVE"; camStatus.className = "status-badge active";
                     btnCam.innerText = "Stop";
                 } catch (err) { 
-                    camStatus.innerText = "DENIED"; 
-                    alert("Could not start the camera. Check if another app is using it.");
+                    camStatus.innerText = "BUSY/DENIED"; 
+                    alert("Could not start. The camera might be in use by another app (like Zoom).");
                 }
             }
         }
@@ -384,7 +386,7 @@
                 if(extMediaRecorder && extMediaRecorder.state === 'recording') stopExtRecording();
             } else {
                 const baseUrl = document.getElementById('go2rtcUrl').value.trim();
-                if (!baseUrl) { extError.innerText = "Tanpri antre yon URL."; extError.classList.add('show'); return; }
+                if (!baseUrl) { extError.innerText = "Please enter a URL."; extError.classList.add('show'); return; }
 
                 const finalUrl = buildStreamUrl(baseUrl);
                 extStatus.innerText = "CONNECTING..."; extStatus.className = "status-badge loading";
@@ -398,7 +400,7 @@
 
                 iframeLoadTimeout = setTimeout(() => {
                     if (isExtActive) {
-                        extError.innerText = "Iframe a pa chaje. Asire w Proxy URL a ap mache.";
+                        extError.innerText = "Iframe is not loading. Ensure your proxy URL is working.";
                         extError.classList.add('show');
                     }
                 }, 10000);
