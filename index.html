@@ -33,10 +33,11 @@
             flex-direction: column;
         }
 
+        /* HEADER AK REVÈY LA */
         header {
             background: rgba(5, 10, 20, 0.95);
             border-bottom: 2px solid var(--border);
-            padding: 15px 30px;
+            padding: 10px 30px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -45,10 +46,40 @@
             top: 0;
             z-index: 100;
         }
+        
+        .header-left { flex: 1; }
         .header-left h1 { font-size: 1.5rem; color: var(--accent); letter-spacing: 2px; }
-        .header-right { text-align: right; font-size: 0.85rem; color: var(--text-muted); }
+        
+        /* STYLE POU REVÈY LA */
+        .header-center {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        .time-display {
+            font-family: 'Courier New', monospace;
+            font-size: 1.8rem;
+            font-weight: 900;
+            color: var(--accent);
+            text-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
+            line-height: 1;
+            letter-spacing: 2px;
+        }
+        .date-display {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            letter-spacing: 1px;
+            margin-top: 5px;
+            text-transform: uppercase;
+        }
+
+        .header-right { flex: 1; text-align: right; font-size: 0.85rem; color: var(--text-muted); }
         .header-right strong { color: var(--success); }
 
+        /* DASHBOARD LAYOUT */
         .dashboard {
             flex: 1;
             display: flex;
@@ -183,7 +214,10 @@
 
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
-        @media (max-width: 600px) {
+        @media (max-width: 768px) {
+            header { flex-direction: column; gap: 10px; padding: 15px; }
+            .header-left, .header-center, .header-right { text-align: center; width: 100%; }
+            .time-display { font-size: 1.5rem; }
             .button-grid { flex-direction: column; }
             button { width: 100%; }
             #videoContainer { height: 50vh; }
@@ -194,8 +228,15 @@
 
     <header>
         <div class="header-left">
-            <h1>🛡️ J.A.R.V.I.S. CAMERA HOST</h1>
+            <h1>🛡️ J.A.R.V.I.S. HOST</h1>
         </div>
+        
+        <!-- NOUVO REVÈY LA -->
+        <div class="header-center">
+            <div class="time-display" id="liveTime">00:00:00</div>
+            <div class="date-display" id="liveDate">Loading Date...</div>
+        </div>
+
         <div class="header-right">
             <strong>Operator:</strong> Gesner Deslandes<br>
             Software Engineer · Global Technology.com
@@ -235,6 +276,28 @@
     </div>
 
     <script>
+        // ==========================================
+        // 1. LIVE DATE & TIME (NOUVO)
+        // ==========================================
+        function updateClock() {
+            const now = new Date();
+            
+            // Fòma Lè a (Èdtan:Minut:Segond)
+            const timeOptions = { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' };
+            document.getElementById('liveTime').innerText = now.toLocaleTimeString('en-US', timeOptions);
+            
+            // Fòma Dat la (Mwa, Jou, Ane)
+            const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('liveDate').innerText = now.toLocaleDateString('en-US', dateOptions);
+        }
+        
+        // Mete ajou l chak segond
+        setInterval(updateClock, 1000);
+        updateClock(); // Kouri l touswit lè paj la chaje
+
+        // ==========================================
+        // 2. CAMERA & RECORDING LOGIC
+        // ==========================================
         let videoStream = null;
         let isMuted = true;
         let mediaRecorder = null;
@@ -300,7 +363,6 @@
                 if (!selectedId) { alert("Please select a camera from the list."); return; }
 
                 try {
-                    // AMELYORASYON: Constraints pou odyo klè
                     videoStream = await navigator.mediaDevices.getUserMedia({ 
                         video: { deviceId: { exact: selectedId } }, 
                         audio: {
@@ -359,9 +421,7 @@
         function startRecording() {
             recordedChunks = [];
             
-            // AMELYORASYON: Fòse bon kodek pou odyo a (Opus)
             let options = { mimeType: 'video/webm;codecs=vp9,opus' };
-            
             if (!MediaRecorder.isTypeSupported(options.mimeType)) {
                 options = { mimeType: 'video/webm;codecs=vp8,opus' };
                 if (!MediaRecorder.isTypeSupported(options.mimeType)) {
@@ -391,7 +451,6 @@
                 setTimeout(() => URL.revokeObjectURL(url), 1000);
             };
 
-            // AMELYORASYON: Anrejistre an mòso (chak 1 segond) pou l pa bloke
             mediaRecorder.start(1000);
             
             recIndicator.classList.add('active');
