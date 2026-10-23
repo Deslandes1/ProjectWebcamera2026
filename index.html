@@ -71,15 +71,15 @@
             </div>
         </div>
 
-        <!-- PANEL 2: REMOTE VIEWER STATUS -->
+        <!-- PANEL 2: REMOTE VIEWER -->
         <div class="panel">
             <div class="panel-header"><h2>🌐 Remote Viewer</h2><div class="status-badge" id="extStatus">WAITING</div></div>
             <div id="externalCameraContainer">
                 <div class="camera-offline" id="extOfflineText">
                     Waiting for someone to open your Share Link.<br><br>
-                    <span style="color:var(--accent)">You will hear their voice here when they connect.</span>
+                    <span style="color:var(--accent)">When they connect, you will hear their voice here.</span>
                 </div>
-                <!-- This audio element plays the viewer's voice -->
+                <!-- Hidden audio to hear the viewer speaking -->
                 <audio id="remoteAudio" autoplay></audio>
             </div>
             <div class="controls">
@@ -124,22 +124,24 @@
         };
 
         window.onload = () => {
+            // Initialize Peer with unique ID
             const roomId = 'JARVIS-' + Math.floor(10000 + Math.random() * 90000);
             peer = new Peer(roomId, peerConfig);
 
             peer.on('open', (id) => { 
-                console.log('JARVIS Ready:', id); 
+                console.log('JARVIS Ready with ID:', id); 
                 if (videoStream) btnShare.disabled = false;
             });
 
+            // When the viewer connects
             peer.on('call', (call) => {
                 currentCall = call;
                 console.log('Viewer connected!');
                 
-                // 1. Answer with OUR video and audio stream
+                // Answer with OUR camera and mic
                 call.answer(videoStream); 
 
-                // 2. Listen to THEIR audio (two-way communication)
+                // Receive THEIR audio (Two-way communication)
                 call.on('stream', (remoteStream) => {
                     remoteAudio.srcObject = remoteStream;
                     document.getElementById('extStatus').innerText = "VIEWER CONNECTED";
@@ -198,9 +200,15 @@
                     videoElement.srcObject = videoStream;
                     videoElement.style.display = 'block';
                     document.getElementById('camOfflineText').style.display = 'none';
-                    videoElement.muted = true; isMuted = true; btnMute.innerHTML = "🔊 Unmute"; 
-                    btnMute.disabled = false; btnRecord.disabled = false;
+                    
+                    // Start muted to prevent echo
+                    videoElement.muted = true; 
+                    isMuted = true; 
+                    btnMute.innerHTML = "🔊 Unmute"; 
+                    btnMute.disabled = false; 
+                    btnRecord.disabled = false;
                     btnShare.disabled = (!peer || !peer.id);
+                    
                     await videoElement.play();
                     camStatus.innerText = "LIVE"; camStatus.className = "status-badge active";
                     btnCam.innerText = "Stop";
@@ -211,11 +219,14 @@
         function toggleMute() {
             if (!videoStream) return;
             isMuted = !isMuted;
-            // Mute/unmute the audio track going to the viewer
+            
+            // Enable/Disable the microphone track going to the viewer
             const audioTrack = videoStream.getAudioTracks()[0];
             if (audioTrack) audioTrack.enabled = !isMuted;
             
-            videoElement.muted = isMuted; // Mute local playback to prevent echo
+            // Mute local playback to prevent feedback loop, but allow hearing the remote person
+            videoElement.muted = isMuted; 
+            
             btnMute.innerHTML = isMuted ? "🔊 Unmute" : "🔇 Mute";
             btnMute.classList.toggle('warning', isMuted);
         }
