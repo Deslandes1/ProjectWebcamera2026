@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>J.A.R.V.I.S. Security Command Center</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <style>
+        :root {
+            --bg-main: #050a14;
+            --panel: rgba(10, 20, 40, 0.95);
+            --accent: #00e5ff;
+            --text-main: #e6f1ff;
+            --text-muted: #8892b0;
+            --border: rgba(0, 229, 255, 0.3);
+            --danger: #ff5470;
+            --success: #00ff9d;
+            --gold: #ffc244;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background: rgba(5, 10, 20, 0.95);
+            border-bottom: 2px solid var(--border);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+            flex-shrink: 0;
+        }
+        .header-left h1 { font-size: 1.5rem; color: var(--accent); letter-spacing: 2px; }
+        .header-right { text-align: right; font-size: 0.85rem; color: var(--text-muted); }
+        .header-right strong { color: var(--success); }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr; 
+            gap: 15px;
+            padding: 15px;
+            flex: 1;
+            height: calc(100vh - 80px);
+            overflow: hidden;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            height: 100%;
+        }
+
+        .panel-header {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 10px 15px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .panel-header h2 { font-size: 0.9rem; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; }
+
+        .status-badge {
+            font-size: 0.7rem; padding: 4px 10px; border-radius: 12px;
+            background: rgba(255, 84, 112, 0.2); color: var(--danger);
+            font-weight: bold; border: 1px solid var(--danger);
+        }
+        .status-badge.active { background: rgba(0, 255, 157, 0.2); color: var(--success); border-color: var(--success); }
+        .status-badge.recording { background: rgba(255, 84, 112, 0.2); color: var(--danger); border-color: var(--danger); animation: pulse 1s infinite; }
+        .status-badge.loading { background: rgba(255, 194, 68, 0.2); color: var(--gold); border-color: var(--gold); animation: pulse 1s infinite; }
+
+        #videoContainer, #externalCameraContainer {
+            flex: 1; min-height: 0; background: #000;
+            display: flex; justify-content: center; align-items: center; position: relative;
+        }
+        #videoFeed { width: 100%; height: 100%; object-fit: cover; display: none; }
+        #externalIframe { width: 100%; height: 100%; border: none; display: none; }
+        
+        .camera-offline { color: var(--text-muted); text-align: center; font-size: 1rem; padding: 20px; line-height: 1.5; }
+
+        #map { flex: 1; min-height: 0; width: 100%; background: #1a1a1a; }
+
+        .controls {
+            padding: 10px 15px; background: rgba(0, 0, 0, 0.6);
+            border-top: 1px solid var(--border); display: flex;
+            flex-direction: column; gap: 8px; flex-shrink: 0;
+        }
+
+        .cam-select, input[type="text"] {
+            width: 100%; padding: 8px; border-radius: 6px;
+            background: rgba(0,0,0,0.5); color: var(--accent);
+            border: 1px solid var(--border); outline: none; font-size: 0.8rem;
+        }
+
+        .button-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+
+        button {
+            width: 100%; background: var(--accent); color: #000;
+            border: none; padding: 8px 4px; border-radius: 6px;
+            font-weight: bold; cursor: pointer; transition: 0.2s;
+            text-transform: uppercase; font-size: 0.7rem;
+        }
+        button:hover { background: #00b8cc; }
+        button.danger { background: var(--danger); color: white; }
+        button.warning { background: var(--gold); color: #000; }
+        button:disabled { background: var(--text-muted); cursor: not-allowed; }
+
+        .rec-indicator {
+            position: absolute; top: 10px; right: 10px; color: var(--danger);
+            font-weight: bold; font-size: 0.8rem; display: none;
+            background: rgba(0,0,0,0.7); padding: 3px 8px; border-radius: 4px;
+            z-index: 100;
+        }
+        .rec-indicator.active { display: flex; align-items: center; gap: 5px; }
+        .rec-dot { width: 8px; height: 8px; background: var(--danger); border-radius: 50%; animation: pulse 1s infinite; }
+
+        .error-message {
+            color: var(--danger); font-size: 0.8rem; text-align: center;
+            padding: 10px; display: none; background: rgba(255,84,112,0.1);
+            border-radius: 6px; margin-top: 5px;
+        }
+        .error-message.show { display: block; }
+
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        @media (max-width: 1000px) {
+            .dashboard { grid-template-columns: 1fr; overflow-y: auto; }
+            .panel { height: 400px; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-left">
+            <h1>🛡️ J.A.R.V.I.S. COMMAND CENTER</h1>
+        </div>
+        <div class="header-right">
+            <strong>Operator:</strong> Gesner Deslandes<br>
+            Software Engineer · Global Technology.com
+        </div>
+    </header>
+
+    <div class="dashboard">
+        <!-- PANEL 1: USB CAMERA -->
+        <div class="panel">
+            <div class="panel-header">
+                <h2>📷 USB Camera</h2>
+                <div class="status-badge" id="camStatus">OFFLINE</div>
+            </div>
+            <div id="videoContainer">
+                <div class="camera-offline" id="camOfflineText">Select a camera and click Start.</div>
+                <video id="videoFeed" autoplay playsinline muted></video>
+                <div class="rec-indicator" id="usbRecIndicator"><div class="rec-dot"></div> REC</div>
+            </div>
+            <div class="controls">
+                <select id="cameraSelect" class="cam-select">
+                    <option value="">Loading cameras...</option>
+                </select>
+                <div class="button-grid">
+                    <button id="btnCam" onclick="toggleCamera()">Start</button>
+                    <button id="btnMute" onclick="toggleMute()" disabled>🔇 Mute</button>
+                    <button id="btnRecord" onclick="toggleRecording()" disabled>🔴 Rec</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PANEL 2: EXTERNAL CAMERA (Ring via Proxy) -->
+        <div class="panel">
+            <div class="panel-header">
+                <h2>🌐 External Camera</h2>
+                <div class="status-badge" id="extStatus">OFFLINE</div>
+            </div>
+            <div id="externalCameraContainer">
+                <div class="camera-offline" id="extOfflineText">
+                    Paste your Proxy URL and select mode.<br>
+                    <span style="font-size:0.8rem; color:var(--accent);">Click Start to connect.</span>
+                </div>
+                <iframe id="externalIframe" allow="autoplay; fullscreen; encrypted-media"></iframe>
+                <div class="rec-indicator" id="extRecIndicator"><div class="rec-dot"></div> REC</div>
+            </div>
+            <div class="controls">
+                <input type="text" id="go2rtcUrl" placeholder="https://jarvis-proxy.workers.dev/stream.html?src=ring">
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <label style="font-size:0.75rem; color:var(--text-muted);">Mode:</label>
+                    <select id="extMode" class="cam-select" style="width:auto; flex:1;">
+                        <option value="mse">MSE</option>
+                        <option value="webrtc">WebRTC</option>
+                    </select>
+                </div>
+                <div class="button-grid">
+                    <button id="btnExtStart" onclick="toggleExternalCamera()">Start</button>
+                    <button id="btnExtMute" onclick="toggleExtMute()" disabled>🔇 Mute</button>
+                    <button id="btnExtRecord" onclick="toggleExtRecording()" disabled>🔴 Rec</button>
+                </div>
+                <div class="error-message" id="extError"></div>
+            </div>
+        </div>
+
+        <!-- PANEL 3: GPS TRACKER -->
+        <div class="panel">
+            <div class="panel-header">
+                <h2>📍 GPS Tracker</h2>
+                <div class="status-badge" id="gpsStatus">OFFLINE</div>
+            </div>
+            <div id="map"></div>
+            <div class="controls">
+                <div class="button-grid">
+                    <button id="btnGpsStart" onclick="toggleGPS()">Start</button>
+                    <button id="btnGpsMute" onclick="toggleGpsMute()" disabled>🔇 Mute</button>
+                    <button id="btnGpsRecord" onclick="toggleGpsRecording()" disabled>🔴 Rec</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. USB CAMERA LOGIC
+        // ==========================================
+        let videoStream = null;
+        const videoElement = document.getElementById('videoFeed');
+        const camStatus = document.getElementById('camStatus');
+        const btnCam = document.getElementById('btnCam');
+        const btnMute = document.getElementById('btnMute');
+        const btnRecord = document.getElementById('btnRecord');
+        const cameraSelect = document.getElementById('cameraSelect');
+        const usbRecIndicator = document.getElementById('usbRecIndicator');
+        let isMuted = true;
+
+        async function getCameras() {
+            try {
+                await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                cameraSelect.innerHTML = '';
+                videoDevices.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Camera ${cameraSelect.length + 1}`;
+                    cameraSelect.appendChild(option);
+                });
+            } catch (err) { cameraSelect.innerHTML = '<option value="">No cameras</option>'; }
+        }
+        getCameras();
+        navigator.mediaDevices.ondevicechange = getCameras;
+
+        async function toggleCamera() {
+            if (videoStream) {
+                if(usbMediaRecorder && usbMediaRecorder.state !== 'inactive') stopUsbRecording();
+                videoStream.getTracks().forEach(track => track.stop());
+                videoElement.srcObject = null;
+                videoElement.style.display = 'none';
+                document.getElementById('camOfflineText').style.display = 'block';
+                camStatus.innerText = "OFFLINE"; camStatus.className = "status-badge";
+                btnCam.innerText = "Start"; btnMute.disabled = true; btnRecord.disabled = true;
+            } else {
+                try {
+                    videoStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { deviceId: { exact: cameraSelect.value }, width: { ideal: 1280 } }, audio: true 
+                    });
+                    videoElement.srcObject = videoStream;
+                    videoElement.style.display = 'block';
+                    document.getElementById('camOfflineText').style.display = 'none';
+                    videoElement.muted = true; isMuted = true; btnMute.innerHTML = "🔊 Unmute"; btnMute.disabled = false; btnRecord.disabled = false;
+                    await videoElement.play();
+                    camStatus.innerText = "LIVE"; camStatus.className = "status-badge active";
+                    btnCam.innerText = "Stop";
+                } catch (err) { camStatus.innerText = "DENIED"; }
+            }
+        }
+
+        function toggleMute() {
+            if (!videoStream) return;
+            isMuted = !isMuted; videoElement.muted = isMuted;
+            btnMute.innerHTML = isMuted ? "🔊 Unmute" : "🔇 Mute";
+            btnMute.classList.toggle('warning', isMuted);
+        }
+
+        let usbMediaRecorder = null; let usbChunks = [];
+        function toggleRecording() { usbMediaRecorder && usbMediaRecorder.state === 'recording' ? stopUsbRecording() : startUsbRecording(); }
+        function startUsbRecording() {
+            usbChunks = [];
+            usbMediaRecorder = new MediaRecorder(videoStream, { mimeType: 'video/webm' });
+            usbMediaRecorder.ondataavailable = e => usbChunks.push(e.data);
+            usbMediaRecorder.onstop = () => {
+                const blob = new Blob(usbChunks, { type: 'video/webm' });
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+                a.download = `USB_Rec_${Date.now()}.webm`; a.click();
+            };
+            usbMediaRecorder.start(); usbRecIndicator.classList.add('active');
+            btnRecord.innerHTML = "⏹ Stop"; camStatus.innerText = "RECORDING"; camStatus.className = "status-badge recording";
+        }
+        function stopUsbRecording() {
+            usbMediaRecorder.stop(); usbRecIndicator.classList.remove('active');
+            btnRecord.innerHTML = "🔴 Rec"; camStatus.innerText = "LIVE"; camStatus.className = "status-badge active";
+        }
+
+        // ==========================================
+        // 2. EXTERNAL CAMERA LOGIC
+        // ==========================================
+        const extIframe = document.getElementById('externalIframe');
+        const extStatus = document.getElementById('extStatus');
+        const btnExtStart = document.getElementById('btnExtStart');
+        const btnExtMute = document.getElementById('btnExtMute');
+        const btnExtRecord = document.getElementById('btnExtRecord');
+        const extRecIndicator = document.getElementById('extRecIndicator');
+        const extMode = document.getElementById('extMode');
+        const extError = document.getElementById('extError');
+        
+        let isExtActive = false;
+        let extMediaRecorder = null;
+        let extChunks = [];
+        let iframeLoadTimeout = null;
+
+        function buildStreamUrl(baseUrl) {
+            let url = baseUrl.trim();
+            const mode = extMode.value;
+            url = url.replace(/[?&]mode=[^&]*/g, '');
+            if (url.includes('?')) { url += '&mode=' + mode; } else { url += '?mode=' + mode; }
+            return url;
+        }
+
+        async function toggleExternalCamera() {
+            if (isExtActive) {
+                if (iframeLoadTimeout) clearTimeout(iframeLoadTimeout);
+                extIframe.src = ""; extIframe.style.display = 'none';
+                document.getElementById('extOfflineText').style.display = 'block';
+                extStatus.innerText = "OFFLINE"; extStatus.className = "status-badge";
+                btnExtStart.innerText = "Start"; btnExtMute.disabled = true; btnExtRecord.disabled = true;
+                isExtActive = false; extError.classList.remove('show');
+                if(extMediaRecorder && extMediaRecorder.state === 'recording') stopExtRecording();
+            } else {
+                const baseUrl = document.getElementById('go2rtcUrl').value.trim();
+                if (!baseUrl) { extError.innerText = "Tanpri antre yon URL."; extError.classList.add('show'); return; }
+
+                const finalUrl = buildStreamUrl(baseUrl);
+                extStatus.innerText = "CONNECTING..."; extStatus.className = "status-badge loading";
+                btnExtStart.disabled = true; extError.classList.remove('show');
+
+                extIframe.src = finalUrl; extIframe.style.display = 'block';
+                document.getElementById('extOfflineText').style.display = 'none';
+                extStatus.innerText = "LIVE"; extStatus.className = "status-badge active";
+                btnExtStart.innerText = "Stop"; btnExtMute.disabled = false; btnExtRecord.disabled = false;
+                btnExtStart.disabled = false; isExtActive = true;
+
+                iframeLoadTimeout = setTimeout(() => {
+                    if (isExtActive) {
+                        extError.innerText = "Iframe a pa chaje. Asire w Proxy URL a ap mache.";
+                        extError.classList.add('show');
+                    }
+                }, 10000);
+            }
+        }
+
+        function toggleExtMute() {
+            const isWarn = btnExtMute.classList.toggle('warning');
+            btnExtMute.innerHTML = isWarn ? "🔇 Mute" : "🔊 Unmute";
+        }
+
+        async function toggleExtRecording() {
+            if (extMediaRecorder && extMediaRecorder.state === 'recording') {
+                stopExtRecording();
+            } else {
+                try {
+                    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                    extChunks = [];
+                    extMediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+                    extMediaRecorder.ondataavailable = e => extChunks.push(e.data);
+                    extMediaRecorder.onstop = () => {
+                        const blob = new Blob(extChunks, { type: 'video/webm' });
+                        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+                        a.download = `External_Rec_${Date.now()}.webm`; a.click();
+                        stream.getTracks().forEach(t => t.stop());
+                    };
+                    extMediaRecorder.start(); extRecIndicator.classList.add('active');
+                    btnExtRecord.innerHTML = "⏹ Stop"; extStatus.innerText = "RECORDING"; extStatus.className = "status-badge recording";
+                } catch (err) { console.log("Screen capture cancelled", err); }
+            }
+        }
+        function stopExtRecording() {
+            extMediaRecorder.stop(); extRecIndicator.classList.remove('active');
+            btnExtRecord.innerHTML = "🔴 Rec"; extStatus.innerText = "LIVE"; extStatus.className = "status-badge active";
+        }
+
+        // ==========================================
+        // 3. GPS TRACKER LOGIC
+        // ==========================================
+        const map = L.map('map').setView([18.5392, -72.3364], 15); 
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap', maxZoom: 20
+        }).addTo(map);
+
+        const trackerIcon = L.divIcon({
+            className: 'custom-marker',
+            html: '<div style="background-color: #00ff9d; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 10px #00ff9d; border: 2px solid white;"></div>',
+            iconSize: [12, 12], iconAnchor: [6, 6]
+        });
+
+        let marker = L.marker([18.5392, -72.3364], {icon: trackerIcon}).addTo(map);
+        let trail = L.polyline([[18.5392, -72.3364]], {color: '#00ff9d', weight: 2}).addTo(map);
+        
+        let isGpsActive = false;
+        let gpsInterval = null;
+        let currentLat = 18.5392;
+        let currentLng = -72.3364;
+        
+        let gpsRecordedData = [];
+        let isGpsRecording = false;
+
+        const gpsStatus = document.getElementById('gpsStatus');
+        const btnGpsStart = document.getElementById('btnGpsStart');
+        const btnGpsMute = document.getElementById('btnGpsMute');
+        const btnGpsRecord = document.getElementById('btnGpsRecord');
+
+        function toggleGPS() {
+            if (isGpsActive) {
+                clearInterval(gpsInterval);
+                isGpsActive = false;
+                gpsStatus.innerText = "OFFLINE"; gpsStatus.className = "status-badge";
+                btnGpsStart.innerText = "Start"; btnGpsMute.disabled = true; btnGpsRecord.disabled = true;
+                if(isGpsRecording) stopGpsRecording();
+            } else {
+                isGpsActive = true;
+                gpsStatus.innerText = "LIVE"; gpsStatus.className = "status-badge active";
+                btnGpsStart.innerText = "Stop"; btnGpsMute.disabled = false; btnGpsRecord.disabled = false;
+
+                gpsInterval = setInterval(() => {
+                    currentLat += (Math.random() - 0.5) * 0.0005;
+                    currentLng += (Math.random() - 0.5) * 0.0005;
+                    marker.setLatLng([currentLat, currentLng]);
+                    trail.addLatLng([currentLat, currentLng]);
+                    map.panTo([currentLat, currentLng]);
+                    
+                    if (isGpsRecording) {
+                        gpsRecordedData.push(`${new Date().toISOString()}, ${currentLat.toFixed(6)}, ${currentLng.toFixed(6)}`);
+                    }
+                }, 2000);
+            }
+        }
+
+        function toggleGpsMute() {
+            const isWarn = btnGpsMute.classList.toggle('warning');
+            btnGpsMute.innerHTML = isWarn ? "🔇 Mute" : "🔊 Unmute";
+        }
+
+        function toggleGpsRecording() {
+            if (isGpsRecording) {
+                stopGpsRecording();
+            } else {
+                isGpsRecording = true;
+                gpsRecordedData = [`Timestamp, Latitude, Longitude`];
+                btnGpsRecord.innerHTML = "⏹ Stop"; btnGpsRecord.classList.remove('danger'); btnGpsRecord.classList.add('warning');
+                gpsStatus.innerText = "TRACKING + REC"; gpsStatus.className = "status-badge recording";
+            }
+        }
+
+        function stopGpsRecording() {
+            isGpsRecording = false;
+            btnGpsRecord.innerHTML = "🔴 Rec"; btnGpsRecord.classList.remove('warning'); btnGpsRecord.classList.add('danger');
+            gpsStatus.innerText = "LIVE"; gpsStatus.className = "status-badge active";
+            
+            if (gpsRecordedData.length > 1) {
+                const blob = new Blob([gpsRecordedData.join('\n')], { type: 'text/csv' });
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+                a.download = `GPS_Log_${Date.now()}.csv`; a.click();
+            }
+        }
+    </script>
+</body>
+</html>
