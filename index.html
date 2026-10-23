@@ -3,92 +3,415 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>J.A.R.V.I.S. Live Viewer</title>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <title>J.A.R.V.I.S. Camera Host</title>
+    
     <style>
-        body { background-color: #050a14; color: #e6f1ff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; text-align: center; }
-        h1 { font-size: 1.2rem; color: #00e5ff; letter-spacing: 1px;}
-        .status { margin-top: 15px; font-weight: bold; color: #ffc244; font-size: 0.9rem;}
-        button { background: #00e5ff; color: #000; border: none; padding: 15px 30px; border-radius: 30px; font-weight: bold; font-size: 1.1rem; cursor: pointer; width: 100%; max-width: 300px; margin-top: 10px;}
-        button:disabled { background: #8892b0; cursor: not-allowed; }
-        #videoContainer { width: 100%; max-width: 800px; aspect-ratio: 16/9; background: #000; border: 2px solid #00e5ff; border-radius: 12px; overflow: hidden; margin-top: 20px; display: none; position: relative;}
-        video { width: 100%; height: 100%; object-fit: contain; }
+        :root {
+            --bg-main: #050a14;
+            --panel: rgba(10, 20, 40, 0.95);
+            --accent: #00e5ff;
+            --text-main: #e6f1ff;
+            --text-muted: #8892b0;
+            --border: rgba(0, 229, 255, 0.3);
+            --danger: #ff5470;
+            --success: #00ff9d;
+            --gold: #ffc244;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+
+        body {
+            background-color: var(--bg-main);
+            background-image: radial-gradient(circle at 50% 50%, rgba(0, 229, 255, 0.05), transparent 50%);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background: rgba(5, 10, 20, 0.95);
+            border-bottom: 2px solid var(--border);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .header-left h1 { font-size: 1.5rem; color: var(--accent); letter-spacing: 2px; }
+        .header-right { text-align: right; font-size: 0.85rem; color: var(--text-muted); }
+        .header-right strong { color: var(--success); }
+
+        /* Single Centered Dashboard */
+        .dashboard {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .panel {
+            width: 100%;
+            max-width: 1000px;
+            height: 90%;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .panel-header {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-header h2 { font-size: 1.2rem; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; }
+
+        .status-badge {
+            font-size: 0.85rem; padding: 6px 15px; border-radius: 20px;
+            background: rgba(255, 84, 112, 0.2); color: var(--danger);
+            font-weight: bold; border: 1px solid var(--danger);
+        }
+        .status-badge.active { background: rgba(0, 255, 157, 0.2); color: var(--success); border-color: var(--success); }
+        .status-badge.recording { background: rgba(255, 84, 112, 0.2); color: var(--danger); border-color: var(--danger); animation: pulse 1s infinite; }
+
+        #videoContainer {
+            flex: 1; 
+            min-height: 0; 
+            background: #000;
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            position: relative;
+        }
+
+        #videoFeed { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: contain; 
+            display: none; 
+        }
+
+        .camera-offline { 
+            color: var(--text-muted); 
+            text-align: center; 
+            font-size: 1.2rem; 
+            padding: 40px; 
+            line-height: 1.6;
+        }
+
+        .rec-indicator {
+            position: absolute; top: 20px; right: 20px; color: var(--danger);
+            font-weight: bold; font-size: 1.2rem; display: none;
+            background: rgba(0,0,0,0.8); padding: 8px 15px; border-radius: 8px;
+            align-items: center; gap: 10px; border: 1px solid var(--danger);
+        }
+        .rec-indicator.active { display: flex; }
+        .rec-dot { width: 15px; height: 15px; background: var(--danger); border-radius: 50%; animation: pulse 1s infinite; }
+
+        .controls {
+            padding: 20px; 
+            background: rgba(0, 0, 0, 0.6);
+            border-top: 1px solid var(--border); 
+            display: flex;
+            flex-direction: column; 
+            gap: 15px; 
+            align-items: center;
+        }
+
+        .cam-select {
+            width: 100%; 
+            max-width: 600px;
+            padding: 12px; 
+            border-radius: 8px;
+            background: rgba(0,0,0,0.5); 
+            color: var(--accent);
+            border: 1px solid var(--border); 
+            outline: none; 
+            font-size: 1rem;
+        }
+
+        .button-grid {
+            display: flex;
+            gap: 15px;
+            width: 100%;
+            max-width: 800px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: var(--accent); 
+            color: #000;
+            border: none; 
+            padding: 15px 25px; 
+            border-radius: 8px;
+            font-weight: bold; 
+            cursor: pointer; 
+            transition: 0.2s;
+            text-transform: uppercase; 
+            font-size: 1rem;
+            flex: 1;
+            min-width: 150px;
+            max-width: 250px;
+        }
+        button:hover { background: #00b8cc; box-shadow: 0 0 15px rgba(0,229,255,0.4); }
+        button.danger { background: var(--danger); color: white; }
+        button.danger:hover { background: #d13a52; }
+        button.warning { background: var(--gold); color: #000; }
+        button.warning:hover { background: #e0a800; }
+        button:disabled { background: var(--text-muted); cursor: not-allowed; box-shadow: none; }
+
+        .btn-permission { 
+            background: var(--gold); 
+            color: black; 
+            max-width: 400px; 
+            margin-bottom: 10px;
+        }
+
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        @media (max-width: 768px) {
+            .panel { height: 100%; border-radius: 0; }
+            .button-grid { flex-direction: column; align-items: center; }
+            button { max-width: 100%; }
+        }
     </style>
 </head>
 <body>
-    <h1>🛡️ J.A.R.V.I.S. LIVE FEED</h1>
-    <p style="color:#8892b0; font-size:0.9rem;">Click below to watch the camera.</p>
-    
-    <button id="startBtn" onclick="startStreaming()">👁️ Watch Camera</button>
-    <div class="status" id="status">Ready.</div>
 
-    <div id="videoContainer">
-        <video id="remoteVideo" autoplay playsinline></video>
+    <header>
+        <div class="header-left">
+            <h1>🛡️ J.A.R.V.I.S. CAMERA HOST</h1>
+        </div>
+        <div class="header-right">
+            <strong>Operator:</strong> Gesner Deslandes<br>
+            Software Engineer · Global Technology.com
+        </div>
+    </header>
+
+    <div class="dashboard">
+        <div class="panel">
+            <div class="panel-header">
+                <h2>📷 USB Camera Feed</h2>
+                <div class="status-badge" id="camStatus">OFFLINE</div>
+            </div>
+            
+            <div id="videoContainer">
+                <div class="camera-offline" id="camOfflineText">
+                    Click the button below to allow camera access.<br>
+                    Then select your USB Camera from the list.
+                </div>
+                <video id="videoFeed" autoplay playsinline muted></video>
+                <div class="rec-indicator" id="recIndicator"><div class="rec-dot"></div> RECORDING</div>
+            </div>
+
+            <div class="controls">
+                <button class="btn-permission" onclick="requestCameraPermission()">🔐 Allow & Find Cameras</button>
+                
+                <select id="cameraSelect" class="cam-select" disabled>
+                    <option value="">Please allow permission first...</option>
+                </select>
+
+                <div class="button-grid">
+                    <button id="btnCam" onclick="toggleCamera()" disabled>Start Camera</button>
+                    <button id="btnMute" onclick="toggleMute()" disabled>🔊 Unmute</button>
+                    <button id="btnRecord" onclick="toggleRecording()" disabled>🔴 Record Video</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
-        const urlParams = new URLSearchParams(window.location.search);
-        const peerId = urlParams.get('id');
-        const statusEl = document.getElementById('status');
+        let videoStream = null;
+        let isMuted = true;
+        let mediaRecorder = null;
+        let recordedChunks = [];
 
-        const peerConfig = {
-            config: {
-                'iceServers': [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-                    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
-                ]
-            }
-        };
+        const videoElement = document.getElementById('videoFeed');
+        const camStatus = document.getElementById('camStatus');
+        const btnCam = document.getElementById('btnCam');
+        const btnMute = document.getElementById('btnMute');
+        const btnRecord = document.getElementById('btnRecord');
+        const cameraSelect = document.getElementById('cameraSelect');
+        const recIndicator = document.getElementById('recIndicator');
 
-        async function startStreaming() {
-            const btn = document.getElementById('startBtn');
-            btn.disabled = true;
-            btn.innerText = "Connecting...";
-            statusEl.innerText = "Connecting to camera...";
-
+        // 1. Fonksyon pou jwenn pèmisyon epi chèche kamera yo
+        async function requestCameraPermission() {
+            cameraSelect.innerHTML = '<option value="">Requesting permission...</option>';
             try {
-                let myAudioStream;
-                try {
-                    myAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-                } catch (e) {
-                    myAudioStream = new MediaStream();
-                    statusEl.innerText = "Mic denied. Watching without talking...";
+                // Mande pèmisyon
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                stream.getTracks().forEach(track => track.stop());
+
+                // Chèche tout kamera yo
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                
+                cameraSelect.innerHTML = '';
+                cameraSelect.disabled = false;
+
+                if (videoDevices.length === 0) {
+                    cameraSelect.innerHTML = '<option value="">No cameras found</option>';
+                    return;
                 }
 
-                const peer = new Peer(null, peerConfig);
-
-                peer.on('open', () => {
-                    const call = peer.call(peerId, myAudioStream);
-                    
-                    call.on('stream', (remoteStream) => {
-                        document.getElementById('videoContainer').style.display = 'block';
-                        document.getElementById('remoteVideo').srcObject = remoteStream;
-                        
-                        const videoEl = document.getElementById('remoteVideo');
-                        videoEl.play().catch(e => {
-                            statusEl.innerText = "Click the video to enable sound.";
-                            videoEl.controls = true;
-                        });
-
-                        statusEl.innerText = "✅ Connected to Live Camera!";
-                        statusEl.style.color = "#00ff9d";
-                        btn.innerText = "Connected";
-                    });
-
-                    call.on('error', (err) => {
-                        statusEl.innerText = "Connection failed. Try again.";
-                        statusEl.style.color = "red";
-                        btn.disabled = false;
-                    });
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Camera ${index + 1}`;
+                    cameraSelect.appendChild(option);
                 });
-            } catch (err) {
+
+                btnCam.disabled = false;
+                document.getElementById('camOfflineText').innerHTML = "Camera found! Click <b>Start Camera</b>.";
+                
+            } catch (err) { 
                 console.error(err);
-                statusEl.innerText = "Error connecting.";
-                statusEl.style.color = "red";
-                btn.disabled = false;
+                cameraSelect.innerHTML = '<option value="">Permission Denied</option>'; 
+                document.getElementById('camOfflineText').innerHTML = "<span style='color:var(--danger)'>Permission Denied.</span><br>Please check the camera icon in your URL bar and allow access.";
             }
+        }
+
+        // 2. Kòmanse oswa Sispann Kamera a
+        async function toggleCamera() {
+            if (videoStream) {
+                // STOP
+                if (mediaRecorder && mediaRecorder.state === 'recording') stopRecording();
+                videoStream.getTracks().forEach(track => track.stop());
+                videoElement.srcObject = null;
+                videoElement.style.display = 'none';
+                document.getElementById('camOfflineText').style.display = 'block';
+                
+                camStatus.innerText = "OFFLINE"; 
+                camStatus.className = "status-badge";
+                btnCam.innerText = "Start Camera"; 
+                btnMute.disabled = true; 
+                btnRecord.disabled = true;
+            } else {
+                // START
+                const selectedId = cameraSelect.value;
+                if (!selectedId) { alert("Please select a camera from the list."); return; }
+
+                try {
+                    videoStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { deviceId: { exact: selectedId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, 
+                        audio: true 
+                    });
+                    
+                    videoElement.srcObject = videoStream;
+                    videoElement.style.display = 'block';
+                    document.getElementById('camOfflineText').style.display = 'none';
+                    
+                    // Default: Muted
+                    videoElement.muted = true; 
+                    isMuted = true; 
+                    btnMute.innerHTML = "🔊 Unmute"; 
+                    btnMute.disabled = false; 
+                    btnRecord.disabled = false;
+                    
+                    await videoElement.play();
+                    
+                    camStatus.innerText = "LIVE"; 
+                    camStatus.className = "status-badge active";
+                    btnCam.innerText = "Stop Camera";
+                } catch (err) { 
+                    camStatus.innerText = "BUSY"; 
+                    alert("Could not start the camera. It might be used by another app (like Zoom).");
+                }
+            }
+        }
+
+        // 3. Mute / Unmute Son an
+        function toggleMute() {
+            if (!videoStream) return;
+            isMuted = !isMuted;
+            
+            // Aktive oswa dezaktive mikwo a
+            const audioTrack = videoStream.getAudioTracks()[0];
+            if (audioTrack) audioTrack.enabled = !isMuted;
+            
+            videoElement.muted = isMuted; 
+            
+            btnMute.innerHTML = isMuted ? "🔊 Unmute" : "🔇 Mute";
+            btnMute.classList.toggle('warning', isMuted);
+        }
+
+        // 4. Anrejistreman (Recording)
+        function toggleRecording() {
+            if (!videoStream) return;
+            
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        }
+
+        function startRecording() {
+            recordedChunks = [];
+            
+            // Eseye MP4 pou Windows pa bay erè "Virus", sinon WebM
+            let options = { mimeType: 'video/mp4' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = { mimeType: 'video/webm;codecs=vp9' };
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options = { mimeType: 'video/webm' };
+                }
+            }
+
+            try {
+                mediaRecorder = new MediaRecorder(videoStream, options);
+            } catch (e) {
+                alert("Your browser does not support video recording.");
+                return;
+            }
+
+            mediaRecorder.ondataavailable = e => { 
+                if (e.data.size > 0) recordedChunks.push(e.data); 
+            };
+
+            mediaRecorder.onstop = () => {
+                const fileExt = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+                const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a'); 
+                a.href = url;
+                a.download = `JARVIS_Record_${new Date().getTime()}.${fileExt}`; 
+                a.click();
+                
+                // Netwaye URL a
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            };
+
+            mediaRecorder.start();
+            
+            recIndicator.classList.add('active');
+            btnRecord.innerHTML = "⏹ Stop & Save";
+            btnRecord.classList.add('warning');
+            camStatus.innerText = "RECORDING"; 
+            camStatus.className = "status-badge recording";
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+            recIndicator.classList.remove('active');
+            btnRecord.innerHTML = "🔴 Record Video";
+            btnRecord.classList.remove('warning');
+            camStatus.innerText = "LIVE"; 
+            camStatus.className = "status-badge active";
         }
     </script>
 </body>
