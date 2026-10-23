@@ -20,11 +20,13 @@
 
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
 
+        /* NOUVO: Body ka woule (scroll) nòmalman */
         html, body {
-            height: 100%;
-            overflow: hidden; /* Bloke woulo paj la nèt */
+            min-height: 100vh;
             background-color: var(--bg-main);
             color: var(--text-main);
+            overflow-x: hidden; /* Pa gen woulman agoch adwat */
+            overflow-y: auto;   /* Pèmèt woule anwo anba */
         }
 
         body {
@@ -40,18 +42,20 @@
             justify-content: space-between;
             align-items: center;
             flex-shrink: 0;
+            position: sticky; /* Header la rete anlè lè w ap woule */
+            top: 0;
+            z-index: 100;
         }
         .header-left h1 { font-size: 1.5rem; color: var(--accent); letter-spacing: 2px; }
         .header-right { text-align: right; font-size: 0.85rem; color: var(--text-muted); }
         .header-right strong { color: var(--success); }
 
-        /* DASHBOARD LAYOUT - GRID FIK */
+        /* DASHBOARD LAYOUT */
         .dashboard {
             flex: 1;
             display: flex;
             justify-content: center;
-            padding: 15px;
-            overflow: hidden;
+            padding: 20px 15px 50px 15px; /* Plis espas anba */
         }
 
         .panel {
@@ -60,10 +64,11 @@
             background: var(--panel);
             border: 1px solid var(--border);
             border-radius: 16px;
-            display: grid;
-            grid-template-rows: auto 1fr auto; /* HEADER - VIDEO - CONTROLS */
+            display: flex;
+            flex-direction: column;
             overflow: hidden;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            height: fit-content; /* Bwat la adapte ak sa ki ladan l */
         }
 
         .panel-header {
@@ -85,19 +90,20 @@
         .status-badge.active { background: rgba(0, 255, 157, 0.2); color: var(--success); border-color: var(--success); }
         .status-badge.recording { background: rgba(255, 84, 112, 0.2); color: var(--danger); border-color: var(--danger); animation: pulse 1s infinite; }
 
-        /* BWA VIDEYO A - LI PA GEN DWA POUSE ANYEN */
+        /* VIDEO CONTAINER - LI GEN YON WOTÈ FIKS POU L PA POULE BOUTON YO */
         #videoContainer {
-            position: relative; /* Fòse videyo a rete andedan li */
+            position: relative;
             background: #000;
-            overflow: hidden;
             width: 100%;
-            height: 100%;
+            height: 60vh; /* Imaj la pral pran 60% wotè ekran an */
+            min-height: 300px; /* Men l p ap janm pi piti pase sa */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
         }
 
         #videoFeed { 
-            position: absolute;
-            top: 0;
-            left: 0;
             width: 100%; 
             height: 100%; 
             object-fit: contain; 
@@ -105,16 +111,12 @@
         }
 
         .camera-offline { 
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
             color: var(--text-muted); 
             text-align: center; 
             font-size: 1.2rem; 
             padding: 20px; 
             line-height: 1.6;
-            width: 100%;
+            position: absolute;
         }
 
         .rec-indicator {
@@ -127,14 +129,14 @@
         .rec-indicator.active { display: flex; }
         .rec-dot { width: 15px; height: 15px; background: var(--danger); border-radius: 50%; animation: pulse 1s infinite; }
 
-        /* KONTWÒL YO - YO TOUJOU ANBA A */
+        /* KONTWÒL YO */
         .controls {
             background: rgba(0, 0, 0, 0.9);
             border-top: 1px solid var(--border);
-            padding: 15px 20px;
+            padding: 20px;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 15px;
         }
 
         .cam-select {
@@ -150,7 +152,7 @@
 
         .button-grid {
             display: flex;
-            gap: 10px;
+            gap: 15px;
             width: 100%;
             justify-content: center;
             flex-wrap: wrap;
@@ -166,7 +168,7 @@
             cursor: pointer; 
             transition: 0.2s;
             text-transform: uppercase; 
-            font-size: 0.9rem;
+            font-size: 0.95rem;
             flex: 1;
             min-width: 140px;
         }
@@ -181,7 +183,6 @@
             background: var(--gold); 
             color: black; 
             width: 100%;
-            margin-bottom: 5px;
         }
 
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
@@ -189,6 +190,7 @@
         @media (max-width: 600px) {
             .button-grid { flex-direction: column; }
             button { width: 100%; }
+            #videoContainer { height: 50vh; }
         }
     </style>
 </head>
@@ -211,7 +213,6 @@
                 <div class="status-badge" id="camStatus">OFFLINE</div>
             </div>
             
-            <!-- VIDEO CONTAINER -->
             <div id="videoContainer">
                 <div class="camera-offline" id="camOfflineText">
                     Click the button below to allow camera access.<br>
@@ -221,7 +222,6 @@
                 <div class="rec-indicator" id="recIndicator"><div class="rec-dot"></div> RECORDING</div>
             </div>
 
-            <!-- CONTROLS ALWAYS AT THE BOTTOM -->
             <div class="controls">
                 <button class="btn-permission" onclick="requestCameraPermission()">🔐 Allow & Find Cameras</button>
                 
