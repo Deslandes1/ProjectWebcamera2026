@@ -168,14 +168,18 @@
                 <div class="status-badge" id="camStatus">OFFLINE</div>
             </div>
             <div id="videoContainer">
-                <div class="camera-offline" id="camOfflineText">Select a camera and click Start.</div>
+                <div class="camera-offline" id="camOfflineText">Click "Find Cams" to allow camera access.</div>
                 <video id="videoFeed" autoplay playsinline muted></video>
                 <div class="rec-indicator" id="usbRecIndicator"><div class="rec-dot"></div> REC</div>
             </div>
             <div class="controls">
-                <select id="cameraSelect" class="cam-select">
-                    <option value="">Loading cameras...</option>
-                </select>
+                <div style="display:flex; gap:8px;">
+                    <select id="cameraSelect" class="cam-select">
+                        <option value="">Click 'Find Cams' to load...</option>
+                    </select>
+                    <!-- NOUVO BOUTON POU CHECHE KAMERA YO -->
+                    <button onclick="getCameras()" style="width: auto; padding: 8px 12px; font-size: 0.75rem;">🔄 Find Cams</button>
+                </div>
                 <div class="button-grid">
                     <button id="btnCam" onclick="toggleCamera()">Start</button>
                     <button id="btnMute" onclick="toggleMute()" disabled>🔇 Mute</button>
@@ -184,7 +188,7 @@
             </div>
         </div>
 
-        <!-- PANEL 2: EXTERNAL CAMERA (Ring via Proxy) -->
+        <!-- PANEL 2: EXTERNAL CAMERA -->
         <div class="panel">
             <div class="panel-header">
                 <h2>🌐 External Camera</h2>
@@ -192,8 +196,7 @@
             </div>
             <div id="externalCameraContainer">
                 <div class="camera-offline" id="extOfflineText">
-                    Paste your Proxy URL and select mode.<br>
-                    <span style="font-size:0.8rem; color:var(--accent);">Click Start to connect.</span>
+                    Paste your Proxy URL and select mode.
                 </div>
                 <iframe id="externalIframe" allow="autoplay; fullscreen; encrypted-media"></iframe>
                 <div class="rec-indicator" id="extRecIndicator"><div class="rec-dot"></div> REC</div>
@@ -247,21 +250,45 @@
         const usbRecIndicator = document.getElementById('usbRecIndicator');
         let isMuted = true;
 
+        // Nouvo fonksyon pou chèche kamera yo AK YON KLIK
         async function getCameras() {
+            cameraSelect.innerHTML = '<option value="">Requesting permission...</option>';
             try {
-                await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                // Sa a ap fòse navigatè a mande pèmisyon an
+                await navigator.mediaDevices.getUserMedia({ video: true });
+                
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                
                 cameraSelect.innerHTML = '';
-                videoDevices.forEach(device => {
+                if (videoDevices.length === 0) {
+                    cameraSelect.innerHTML = '<option value="">No cameras found</option>';
+                    return;
+                }
+
+                videoDevices.forEach((device, index) => {
                     const option = document.createElement('option');
                     option.value = device.deviceId;
-                    option.text = device.label || `Camera ${cameraSelect.length + 1}`;
+                    // Bay yo yon non si navigatè a pa bay non an
+                    option.text = device.label || `Camera ${index + 1}`;
                     cameraSelect.appendChild(option);
                 });
-            } catch (err) { cameraSelect.innerHTML = '<option value="">No cameras</option>'; }
+
+                document.getElementById('camOfflineText').innerText = "Camera found! Click Start.";
+
+            } catch (err) { 
+                console.error(err);
+                cameraSelect.innerHTML = '<option value="">Permission Denied</option>'; 
+                document.getElementById('camOfflineText').innerText = "Please allow camera access in your browser.";
+            }
         }
-        getCameras();
+
+        // Chèche kamera yo otomatikman lè paj la chaje
+        window.onload = () => {
+            getCameras();
+        };
+
+        // Si w ploge yon nouvo kamera USB, li ap mete l ajou
         navigator.mediaDevices.ondevicechange = getCameras;
 
         async function toggleCamera() {
@@ -274,9 +301,12 @@
                 camStatus.innerText = "OFFLINE"; camStatus.className = "status-badge";
                 btnCam.innerText = "Start"; btnMute.disabled = true; btnRecord.disabled = true;
             } else {
+                const selectedId = cameraSelect.value;
+                if (!selectedId) { alert("Please select a camera from the dropdown first."); return; }
+
                 try {
                     videoStream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { deviceId: { exact: cameraSelect.value }, width: { ideal: 1280 } }, audio: true 
+                        video: { deviceId: { exact: selectedId }, width: { ideal: 1280 } }, audio: true 
                     });
                     videoElement.srcObject = videoStream;
                     videoElement.style.display = 'block';
@@ -285,7 +315,10 @@
                     await videoElement.play();
                     camStatus.innerText = "LIVE"; camStatus.className = "status-badge active";
                     btnCam.innerText = "Stop";
-                } catch (err) { camStatus.innerText = "DENIED"; }
+                } catch (err) { 
+                    camStatus.innerText = "DENIED"; 
+                    alert("Could not start the camera. Check if another app is using it.");
+                }
             }
         }
 
