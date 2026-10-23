@@ -8,6 +8,9 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
+    <!-- NOUVO: PeerJS pou pataje kamera a -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    
     <style>
         :root {
             --bg-main: #050a14;
@@ -86,7 +89,6 @@
         }
         .status-badge.active { background: rgba(0, 255, 157, 0.2); color: var(--success); border-color: var(--success); }
         .status-badge.recording { background: rgba(255, 84, 112, 0.2); color: var(--danger); border-color: var(--danger); animation: pulse 1s infinite; }
-        .status-badge.loading { background: rgba(255, 194, 68, 0.2); color: var(--gold); border-color: var(--gold); animation: pulse 1s infinite; }
 
         #videoContainer, #externalCameraContainer {
             flex: 1; min-height: 0; background: #000;
@@ -133,13 +135,6 @@
         .rec-indicator.active { display: flex; align-items: center; gap: 5px; }
         .rec-dot { width: 8px; height: 8px; background: var(--danger); border-radius: 50%; animation: pulse 1s infinite; }
 
-        .error-message {
-            color: var(--danger); font-size: 0.8rem; text-align: center;
-            padding: 10px; display: none; background: rgba(255,84,112,0.1);
-            border-radius: 6px; margin-top: 5px;
-        }
-        .error-message.show { display: block; }
-
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
         @media (max-width: 1000px) {
@@ -161,7 +156,7 @@
     </header>
 
     <div class="dashboard">
-        <!-- PANEL 1: USB CAMERA -->
+        <!-- PANEL 1: USB CAMERA & SHARE -->
         <div class="panel">
             <div class="panel-header">
                 <h2>📷 USB Camera</h2>
@@ -169,15 +164,13 @@
             </div>
             <div id="videoContainer">
                 <div class="camera-offline" id="camOfflineText">
-                    Click "Allow & Find Cameras" below to load your USB camera.
+                    Click "Allow & Find Cameras" to start.
                 </div>
                 <video id="videoFeed" autoplay playsinline muted></video>
                 <div class="rec-indicator" id="usbRecIndicator"><div class="rec-dot"></div> REC</div>
             </div>
             <div class="controls">
-                <!-- THE MAGIC BUTTON -->
                 <button onclick="requestCameraPermission()" style="background: var(--gold); color: black;">🔐 Allow & Find Cameras</button>
-                
                 <select id="cameraSelect" class="cam-select" disabled>
                     <option value="">Please allow permission first...</option>
                 </select>
@@ -186,6 +179,8 @@
                     <button id="btnMute" onclick="toggleMute()" disabled>🔇 Mute</button>
                     <button id="btnRecord" onclick="toggleRecording()" disabled>🔴 Rec</button>
                 </div>
+                <!-- NOUVO BOUTON POU PATAJE -->
+                <button onclick="shareCamera()" id="btnShare" style="background: #8b5cf6; color: white; margin-top: 5px;" disabled>🔗 Share Link with Someone</button>
             </div>
         </div>
 
@@ -197,26 +192,13 @@
             </div>
             <div id="externalCameraContainer">
                 <div class="camera-offline" id="extOfflineText">
-                    Paste your External Stream URL (Ring/go2rtc) and click Start.
+                    Paste External Stream URL here.
                 </div>
                 <iframe id="externalIframe" allow="autoplay; fullscreen; encrypted-media"></iframe>
-                <div class="rec-indicator" id="extRecIndicator"><div class="rec-dot"></div> REC</div>
             </div>
             <div class="controls">
-                <input type="text" id="go2rtcUrl" placeholder="https://jarvis-proxy.workers.dev/stream.html?src=ring">
-                <div style="display:flex; gap:8px; align-items:center;">
-                    <label style="font-size:0.75rem; color:var(--text-muted);">Mode:</label>
-                    <select id="extMode" class="cam-select" style="width:auto; flex:1;">
-                        <option value="mse">MSE</option>
-                        <option value="webrtc">WebRTC</option>
-                    </select>
-                </div>
-                <div class="button-grid">
-                    <button id="btnExtStart" onclick="toggleExternalCamera()">Start</button>
-                    <button id="btnExtMute" onclick="toggleExtMute()" disabled>🔇 Mute</button>
-                    <button id="btnExtRecord" onclick="toggleExtRecording()" disabled>🔴 Rec</button>
-                </div>
-                <div class="error-message" id="extError"></div>
+                <input type="text" id="go2rtcUrl" placeholder="https://...">
+                <button id="btnExtStart" onclick="toggleExternalCamera()">Start</button>
             </div>
         </div>
 
@@ -228,98 +210,70 @@
             </div>
             <div id="map"></div>
             <div class="controls">
-                <div class="button-grid">
-                    <button id="btnGpsStart" onclick="toggleGPS()">Start</button>
-                    <button id="btnGpsMute" onclick="toggleGpsMute()" disabled>🔇 Mute</button>
-                    <button id="btnGpsRecord" onclick="toggleGpsRecording()" disabled>🔴 Rec</button>
-                </div>
+                <button id="btnGpsStart" onclick="toggleGPS()">Start</button>
             </div>
         </div>
     </div>
 
     <script>
-        // ==========================================
-        // 1. USB CAMERA LOGIC (Permission First)
-        // ==========================================
+        // --- 1. USB CAMERA LOGIC ---
         let videoStream = null;
         const videoElement = document.getElementById('videoFeed');
         const camStatus = document.getElementById('camStatus');
         const btnCam = document.getElementById('btnCam');
         const btnMute = document.getElementById('btnMute');
         const btnRecord = document.getElementById('btnRecord');
+        const btnShare = document.getElementById('btnShare');
         const cameraSelect = document.getElementById('cameraSelect');
         const usbRecIndicator = document.getElementById('usbRecIndicator');
         let isMuted = true;
 
-        // SA A SE FONKSYON PRENSIPAL LA POU JWENN KAMERA YO
         async function requestCameraPermission() {
             cameraSelect.innerHTML = '<option value="">Requesting permission...</option>';
-            
             try {
-                // 1. Fòse navigatè a mande pèmisyon an
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                
-                // 2. Fèmen stream nan imedyatman paske nou jis bezwen pèmisyon an
                 stream.getTracks().forEach(track => track.stop());
-
-                // 3. Kounye a chèche tout kamera yo (kounye a w ap wè non yo)
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(device => device.kind === 'videoinput');
-                
                 cameraSelect.innerHTML = '';
                 cameraSelect.disabled = false;
-
-                if (videoDevices.length === 0) {
-                    cameraSelect.innerHTML = '<option value="">No cameras found</option>';
-                    return;
-                }
-
                 videoDevices.forEach((device, index) => {
                     const option = document.createElement('option');
                     option.value = device.deviceId;
                     option.text = device.label || `Camera ${index + 1}`;
                     cameraSelect.appendChild(option);
                 });
-
-                // Aktive bouton Start lan
                 btnCam.disabled = false;
                 document.getElementById('camOfflineText').innerText = "Camera ready. Click Start.";
-
             } catch (err) { 
-                console.error("Permission error:", err);
                 cameraSelect.innerHTML = '<option value="">Permission Denied</option>'; 
-                document.getElementById('camOfflineText').innerText = "Please check the camera icon in your URL bar and allow access.";
-                alert("Could not access camera. Please check your browser settings.");
+                document.getElementById('camOfflineText').innerText = "Please check the camera icon in your URL bar.";
             }
         }
 
         async function toggleCamera() {
             if (videoStream) {
-                if(usbMediaRecorder && usbMediaRecorder.state !== 'inactive') stopUsbRecording();
                 videoStream.getTracks().forEach(track => track.stop());
                 videoElement.srcObject = null;
                 videoElement.style.display = 'none';
                 document.getElementById('camOfflineText').style.display = 'block';
                 camStatus.innerText = "OFFLINE"; camStatus.className = "status-badge";
-                btnCam.innerText = "Start"; btnMute.disabled = true; btnRecord.disabled = true;
+                btnCam.innerText = "Start"; btnMute.disabled = true; btnRecord.disabled = true; btnShare.disabled = true;
             } else {
-                const selectedId = cameraSelect.value;
-                if (!selectedId) { alert("Please select a camera first."); return; }
-
                 try {
                     videoStream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { deviceId: { exact: selectedId }, width: { ideal: 1280 } }, audio: true 
+                        video: { deviceId: { exact: cameraSelect.value }, width: { ideal: 1280 } }, audio: true 
                     });
                     videoElement.srcObject = videoStream;
                     videoElement.style.display = 'block';
                     document.getElementById('camOfflineText').style.display = 'none';
                     videoElement.muted = true; isMuted = true; btnMute.innerHTML = "🔊 Unmute"; btnMute.disabled = false; btnRecord.disabled = false;
+                    btnShare.disabled = false; // Aktive pataje a
                     await videoElement.play();
                     camStatus.innerText = "LIVE"; camStatus.className = "status-badge active";
                     btnCam.innerText = "Stop";
                 } catch (err) { 
                     camStatus.innerText = "BUSY/DENIED"; 
-                    alert("Could not start. The camera might be in use by another app (like Zoom).");
                 }
             }
         }
@@ -328,196 +282,60 @@
             if (!videoStream) return;
             isMuted = !isMuted; videoElement.muted = isMuted;
             btnMute.innerHTML = isMuted ? "🔊 Unmute" : "🔇 Mute";
-            btnMute.classList.toggle('warning', isMuted);
         }
 
-        let usbMediaRecorder = null; let usbChunks = [];
-        function toggleRecording() { usbMediaRecorder && usbMediaRecorder.state === 'recording' ? stopUsbRecording() : startUsbRecording(); }
-        function startUsbRecording() {
-            usbChunks = [];
-            usbMediaRecorder = new MediaRecorder(videoStream, { mimeType: 'video/webm' });
-            usbMediaRecorder.ondataavailable = e => usbChunks.push(e.data);
-            usbMediaRecorder.onstop = () => {
-                const blob = new Blob(usbChunks, { type: 'video/webm' });
-                const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-                a.download = `USB_Rec_${Date.now()}.webm`; a.click();
-            };
-            usbMediaRecorder.start(); usbRecIndicator.classList.add('active');
-            btnRecord.innerHTML = "⏹ Stop"; camStatus.innerText = "RECORDING"; camStatus.className = "status-badge recording";
-        }
-        function stopUsbRecording() {
-            usbMediaRecorder.stop(); usbRecIndicator.classList.remove('active');
-            btnRecord.innerHTML = "🔴 Rec"; camStatus.innerText = "LIVE"; camStatus.className = "status-badge active";
-        }
+        // --- 2. PATAJE KAMERA A AK PEERJS ---
+        function shareCamera() {
+            if (!videoStream) return;
 
-        // ==========================================
-        // 2. EXTERNAL CAMERA LOGIC
-        // ==========================================
-        const extIframe = document.getElementById('externalIframe');
-        const extStatus = document.getElementById('extStatus');
-        const btnExtStart = document.getElementById('btnExtStart');
-        const btnExtMute = document.getElementById('btnExtMute');
-        const btnExtRecord = document.getElementById('btnExtRecord');
-        const extRecIndicator = document.getElementById('extRecIndicator');
-        const extMode = document.getElementById('extMode');
-        const extError = document.getElementById('extError');
-        
-        let isExtActive = false;
-        let extMediaRecorder = null;
-        let extChunks = [];
-        let iframeLoadTimeout = null;
-
-        function buildStreamUrl(baseUrl) {
-            let url = baseUrl.trim();
-            const mode = extMode.value;
-            url = url.replace(/[?&]mode=[^&]*/g, '');
-            if (url.includes('?')) { url += '&mode=' + mode; } else { url += '?mode=' + mode; }
-            return url;
-        }
-
-        async function toggleExternalCamera() {
-            if (isExtActive) {
-                if (iframeLoadTimeout) clearTimeout(iframeLoadTimeout);
-                extIframe.src = ""; extIframe.style.display = 'none';
-                document.getElementById('extOfflineText').style.display = 'block';
-                extStatus.innerText = "OFFLINE"; extStatus.className = "status-badge";
-                btnExtStart.innerText = "Start"; btnExtMute.disabled = true; btnExtRecord.disabled = true;
-                isExtActive = false; extError.classList.remove('show');
-                if(extMediaRecorder && extMediaRecorder.state === 'recording') stopExtRecording();
-            } else {
-                const baseUrl = document.getElementById('go2rtcUrl').value.trim();
-                if (!baseUrl) { extError.innerText = "Please enter a URL."; extError.classList.add('show'); return; }
-
-                const finalUrl = buildStreamUrl(baseUrl);
-                extStatus.innerText = "CONNECTING..."; extStatus.className = "status-badge loading";
-                btnExtStart.disabled = true; extError.classList.remove('show');
-
-                extIframe.src = finalUrl; extIframe.style.display = 'block';
-                document.getElementById('extOfflineText').style.display = 'none';
-                extStatus.innerText = "LIVE"; extStatus.className = "status-badge active";
-                btnExtStart.innerText = "Stop"; btnExtMute.disabled = false; btnExtRecord.disabled = false;
-                btnExtStart.disabled = false; isExtActive = true;
-
-                iframeLoadTimeout = setTimeout(() => {
-                    if (isExtActive) {
-                        extError.innerText = "Iframe is not loading. Ensure your proxy URL is working.";
-                        extError.classList.add('show');
-                    }
-                }, 10000);
-            }
-        }
-
-        function toggleExtMute() {
-            const isWarn = btnExtMute.classList.toggle('warning');
-            btnExtMute.innerHTML = isWarn ? "🔇 Mute" : "🔊 Unmute";
-        }
-
-        async function toggleExtRecording() {
-            if (extMediaRecorder && extMediaRecorder.state === 'recording') {
-                stopExtRecording();
-            } else {
-                try {
-                    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-                    extChunks = [];
-                    extMediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-                    extMediaRecorder.ondataavailable = e => extChunks.push(e.data);
-                    extMediaRecorder.onstop = () => {
-                        const blob = new Blob(extChunks, { type: 'video/webm' });
-                        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-                        a.download = `External_Rec_${Date.now()}.webm`; a.click();
-                        stream.getTracks().forEach(t => t.stop());
-                    };
-                    extMediaRecorder.start(); extRecIndicator.classList.add('active');
-                    btnExtRecord.innerHTML = "⏹ Stop"; extStatus.innerText = "RECORDING"; extStatus.className = "status-badge recording";
-                } catch (err) { console.log("Screen capture cancelled", err); }
-            }
-        }
-        function stopExtRecording() {
-            extMediaRecorder.stop(); extRecIndicator.classList.remove('active');
-            btnExtRecord.innerHTML = "🔴 Rec"; extStatus.innerText = "LIVE"; extStatus.className = "status-badge active";
-        }
-
-        // ==========================================
-        // 3. GPS TRACKER LOGIC
-        // ==========================================
-        const map = L.map('map').setView([18.5392, -72.3364], 15); 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap', maxZoom: 20
-        }).addTo(map);
-
-        const trackerIcon = L.divIcon({
-            className: 'custom-marker',
-            html: '<div style="background-color: #00ff9d; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 10px #00ff9d; border: 2px solid white;"></div>',
-            iconSize: [12, 12], iconAnchor: [6, 6]
-        });
-
-        let marker = L.marker([18.5392, -72.3364], {icon: trackerIcon}).addTo(map);
-        let trail = L.polyline([[18.5392, -72.3364]], {color: '#00ff9d', weight: 2}).addTo(map);
-        
-        let isGpsActive = false;
-        let gpsInterval = null;
-        let currentLat = 18.5392;
-        let currentLng = -72.3364;
-        
-        let gpsRecordedData = [];
-        let isGpsRecording = false;
-
-        const gpsStatus = document.getElementById('gpsStatus');
-        const btnGpsStart = document.getElementById('btnGpsStart');
-        const btnGpsMute = document.getElementById('btnGpsMute');
-        const btnGpsRecord = document.getElementById('btnGpsRecord');
-
-        function toggleGPS() {
-            if (isGpsActive) {
-                clearInterval(gpsInterval);
-                isGpsActive = false;
-                gpsStatus.innerText = "OFFLINE"; gpsStatus.className = "status-badge";
-                btnGpsStart.innerText = "Start"; btnGpsMute.disabled = true; btnGpsRecord.disabled = true;
-                if(isGpsRecording) stopGpsRecording();
-            } else {
-                isGpsActive = true;
-                gpsStatus.innerText = "LIVE"; gpsStatus.className = "status-badge active";
-                btnGpsStart.innerText = "Stop"; btnGpsMute.disabled = false; btnGpsRecord.disabled = false;
-
-                gpsInterval = setInterval(() => {
-                    currentLat += (Math.random() - 0.5) * 0.0005;
-                    currentLng += (Math.random() - 0.5) * 0.0005;
-                    marker.setLatLng([currentLat, currentLng]);
-                    trail.addLatLng([currentLat, currentLng]);
-                    map.panTo([currentLat, currentLng]);
-                    
-                    if (isGpsRecording) {
-                        gpsRecordedData.push(`${new Date().toISOString()}, ${currentLat.toFixed(6)}, ${currentLng.toFixed(6)}`);
-                    }
-                }, 2000);
-            }
-        }
-
-        function toggleGpsMute() {
-            const isWarn = btnGpsMute.classList.toggle('warning');
-            btnGpsMute.innerHTML = isWarn ? "🔇 Mute" : "🔊 Unmute";
-        }
-
-        function toggleGpsRecording() {
-            if (isGpsRecording) {
-                stopGpsRecording();
-            } else {
-                isGpsRecording = true;
-                gpsRecordedData = [`Timestamp, Latitude, Longitude`];
-                btnGpsRecord.innerHTML = "⏹ Stop"; btnGpsRecord.classList.remove('danger'); btnGpsRecord.classList.add('warning');
-                gpsStatus.innerText = "TRACKING + REC"; gpsStatus.className = "status-badge recording";
-            }
-        }
-
-        function stopGpsRecording() {
-            isGpsRecording = false;
-            btnGpsRecord.innerHTML = "🔴 Rec"; btnGpsRecord.classList.remove('warning'); btnGpsRecord.classList.add('danger');
-            gpsStatus.innerText = "LIVE"; gpsStatus.className = "status-badge active";
+            // Jenere yon ID inik pou sesyon an
+            const roomId = 'JARVIS-' + Math.floor(1000 + Math.random() * 9000);
             
-            if (gpsRecordedData.length > 1) {
-                const blob = new Blob([gpsRecordedData.join('\n')], { type: 'text/csv' });
-                const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-                a.download = `GPS_Log_${Date.now()}.csv`; a.click();
+            // Konekte ak sèvè PeerJS gratis la
+            const peer = new Peer(roomId);
+
+            peer.on('open', (id) => {
+                const shareLink = `https://deslandes1.github.io/ProjectWebcamera2026/viewer.html?id=${id}`;
+                
+                // Kopye lyen an nan clipboard
+                navigator.clipboard.writeText(shareLink).then(() => {
+                    alert(`✅ LYEN PATAJE A KOPYE!\n\nVoye lyen sa a bay moun nan:\n${shareLink}\n\n(Pa fèmen paj sa a, sinon koneksyon an ap koupe)`);
+                }).catch(() => {
+                    prompt("Kopye lyen sa a pou w pataje l:", shareLink);
+                });
+            });
+
+            // Lè yon moun konekte ak lyen an, voye videyo a ba li
+            peer.on('call', (call) => {
+                call.answer(videoStream); 
+            });
+        }
+
+        // --- 3. GPS TRACKER LOGIC ---
+        const map = L.map('map').setView([18.5392, -72.3364], 15); 
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
+        let marker = L.marker([18.5392, -72.3364]).addTo(map);
+        
+        function toggleGPS() {
+            if (document.getElementById('gpsStatus').innerText === "OFFLINE") {
+                document.getElementById('gpsStatus').innerText = "LIVE";
+                document.getElementById('gpsStatus').className = "status-badge active";
+                document.getElementById('btnGpsStart').innerText = "Stop";
+            } else {
+                document.getElementById('gpsStatus').innerText = "OFFLINE";
+                document.getElementById('gpsStatus').className = "status-badge";
+                document.getElementById('btnGpsStart').innerText = "Start";
+            }
+        }
+
+        // External Camera (Placeholder)
+        function toggleExternalCamera() {
+            const url = document.getElementById('go2rtcUrl').value;
+            if(url) {
+                document.getElementById('externalIframe').src = url;
+                document.getElementById('externalIframe').style.display = 'block';
+                document.getElementById('extStatus').innerText = "LIVE";
+                document.getElementById('extStatus').className = "status-badge active";
             }
         }
     </script>
