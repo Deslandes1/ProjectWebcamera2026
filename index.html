@@ -27,7 +27,7 @@
             height: 100vh;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            overflow: hidden; /* Bloke paj la pou l pa woule */
         }
 
         header {
@@ -37,25 +37,27 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            flex-shrink: 0;
+            flex-shrink: 0; /* Header la pa janm retresi */
         }
         .header-left h1 { font-size: 1.5rem; color: var(--accent); letter-spacing: 2px; }
         .header-right { text-align: right; font-size: 0.85rem; color: var(--text-muted); }
         .header-right strong { color: var(--success); }
 
-        /* Single Centered Dashboard */
+        /* DASHBOARD */
         .dashboard {
             flex: 1;
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 20px;
+            padding: 15px;
+            overflow: hidden; /* Enpòtan */
         }
 
         .panel {
             width: 100%;
             max-width: 1000px;
-            height: 90%;
+            height: 100%;
+            max-height: calc(100vh - 100px); /* Bloke wotè a */
             background: var(--panel);
             border: 1px solid var(--border);
             border-radius: 16px;
@@ -72,6 +74,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-shrink: 0;
         }
 
         .panel-header h2 { font-size: 1.2rem; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; }
@@ -86,12 +89,13 @@
 
         #videoContainer {
             flex: 1; 
-            min-height: 0; 
+            min-height: 0; /* SA A SE MAJIK LA: Fòse videyo a rete nan bwat li */
             background: #000;
             display: flex; 
             justify-content: center; 
             align-items: center; 
             position: relative;
+            overflow: hidden;
         }
 
         #videoFeed { 
@@ -114,35 +118,38 @@
             font-weight: bold; font-size: 1.2rem; display: none;
             background: rgba(0,0,0,0.8); padding: 8px 15px; border-radius: 8px;
             align-items: center; gap: 10px; border: 1px solid var(--danger);
+            z-index: 10;
         }
         .rec-indicator.active { display: flex; }
         .rec-dot { width: 15px; height: 15px; background: var(--danger); border-radius: 50%; animation: pulse 1s infinite; }
 
+        /* KONTWÒL YO - YO PA JANM GENYEN DWA SOTI SOU EKRAN */
         .controls {
-            padding: 20px; 
-            background: rgba(0, 0, 0, 0.6);
+            padding: 15px 20px; 
+            background: rgba(0, 0, 0, 0.8);
             border-top: 1px solid var(--border); 
             display: flex;
             flex-direction: column; 
-            gap: 15px; 
+            gap: 12px; 
             align-items: center;
+            flex-shrink: 0; /* SA A GARANTI BOUTON YO AP TOUJOU LA */
         }
 
         .cam-select {
             width: 100%; 
             max-width: 600px;
-            padding: 12px; 
+            padding: 10px; 
             border-radius: 8px;
             background: rgba(0,0,0,0.5); 
             color: var(--accent);
             border: 1px solid var(--border); 
             outline: none; 
-            font-size: 1rem;
+            font-size: 0.9rem;
         }
 
         .button-grid {
             display: flex;
-            gap: 15px;
+            gap: 10px;
             width: 100%;
             max-width: 800px;
             justify-content: center;
@@ -153,16 +160,16 @@
             background: var(--accent); 
             color: #000;
             border: none; 
-            padding: 15px 25px; 
+            padding: 12px 20px; 
             border-radius: 8px;
             font-weight: bold; 
             cursor: pointer; 
             transition: 0.2s;
             text-transform: uppercase; 
-            font-size: 1rem;
+            font-size: 0.9rem;
             flex: 1;
-            min-width: 150px;
-            max-width: 250px;
+            min-width: 120px;
+            max-width: 200px;
         }
         button:hover { background: #00b8cc; box-shadow: 0 0 15px rgba(0,229,255,0.4); }
         button.danger { background: var(--danger); color: white; }
@@ -175,15 +182,14 @@
             background: var(--gold); 
             color: black; 
             max-width: 400px; 
-            margin-bottom: 10px;
         }
 
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 
         @media (max-width: 768px) {
-            .panel { height: 100%; border-radius: 0; }
+            .panel { max-height: 100%; border-radius: 0; }
             .button-grid { flex-direction: column; align-items: center; }
-            button { max-width: 100%; }
+            button { max-width: 100%; width: 100%; }
         }
     </style>
 </head>
@@ -245,15 +251,12 @@
         const cameraSelect = document.getElementById('cameraSelect');
         const recIndicator = document.getElementById('recIndicator');
 
-        // 1. Fonksyon pou jwenn pèmisyon epi chèche kamera yo
         async function requestCameraPermission() {
             cameraSelect.innerHTML = '<option value="">Requesting permission...</option>';
             try {
-                // Mande pèmisyon
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 stream.getTracks().forEach(track => track.stop());
 
-                // Chèche tout kamera yo
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(device => device.kind === 'videoinput');
                 
@@ -282,10 +285,8 @@
             }
         }
 
-        // 2. Kòmanse oswa Sispann Kamera a
         async function toggleCamera() {
             if (videoStream) {
-                // STOP
                 if (mediaRecorder && mediaRecorder.state === 'recording') stopRecording();
                 videoStream.getTracks().forEach(track => track.stop());
                 videoElement.srcObject = null;
@@ -298,13 +299,12 @@
                 btnMute.disabled = true; 
                 btnRecord.disabled = true;
             } else {
-                // START
                 const selectedId = cameraSelect.value;
                 if (!selectedId) { alert("Please select a camera from the list."); return; }
 
                 try {
                     videoStream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { deviceId: { exact: selectedId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, 
+                        video: { deviceId: { exact: selectedId } }, 
                         audio: true 
                     });
                     
@@ -312,7 +312,6 @@
                     videoElement.style.display = 'block';
                     document.getElementById('camOfflineText').style.display = 'none';
                     
-                    // Default: Muted
                     videoElement.muted = true; 
                     isMuted = true; 
                     btnMute.innerHTML = "🔊 Unmute"; 
@@ -326,17 +325,15 @@
                     btnCam.innerText = "Stop Camera";
                 } catch (err) { 
                     camStatus.innerText = "BUSY"; 
-                    alert("Could not start the camera. It might be used by another app (like Zoom).");
+                    alert("Could not start the camera.");
                 }
             }
         }
 
-        // 3. Mute / Unmute Son an
         function toggleMute() {
             if (!videoStream) return;
             isMuted = !isMuted;
             
-            // Aktive oswa dezaktive mikwo a
             const audioTrack = videoStream.getAudioTracks()[0];
             if (audioTrack) audioTrack.enabled = !isMuted;
             
@@ -346,7 +343,6 @@
             btnMute.classList.toggle('warning', isMuted);
         }
 
-        // 4. Anrejistreman (Recording)
         function toggleRecording() {
             if (!videoStream) return;
             
@@ -360,13 +356,9 @@
         function startRecording() {
             recordedChunks = [];
             
-            // Eseye MP4 pou Windows pa bay erè "Virus", sinon WebM
             let options = { mimeType: 'video/mp4' };
             if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options = { mimeType: 'video/webm;codecs=vp9' };
-                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                    options = { mimeType: 'video/webm' };
-                }
+                options = { mimeType: 'video/webm' };
             }
 
             try {
@@ -389,8 +381,6 @@
                 a.href = url;
                 a.download = `JARVIS_Record_${new Date().getTime()}.${fileExt}`; 
                 a.click();
-                
-                // Netwaye URL a
                 setTimeout(() => URL.revokeObjectURL(url), 1000);
             };
 
