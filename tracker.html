@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ht">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>J.A.R.V.I.S. - Student Tracker</title>
+    <style>
+        body { background-color: #050a14; color: #00e5ff; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; padding: 20px; box-sizing: border-box; }
+        h1 { font-size: 1.5rem; letter-spacing: 2px; }
+        .status-box { background: #0a1128; border: 2px solid #00e5ff; padding: 25px; border-radius: 15px; width: 100%; max-width: 320px; box-shadow: 0 0 25px rgba(0,229,255,0.3); margin-top: 20px; }
+        .pulse { width: 20px; height: 20px; background: #00ff9d; border-radius: 50%; display: inline-block; animation: blink 1.5s infinite; margin-bottom: 15px; }
+        @keyframes blink { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; transform: scale(0.8); } 100% { opacity: 1; transform: scale(1); } }
+        #coords { font-family: monospace; font-size: 1.1rem; color: #fff; margin-top: 15px; line-height: 1.5; }
+        .warning { color: #ffc244; font-size: 0.8rem; margin-top: 25px; max-width: 300px; line-height: 1.4; }
+        #device-id { font-weight: bold; color: #000; background: #ffc244; padding: 5px 10px; border-radius: 5px; display: inline-block; margin-top: 10px; font-family: monospace; font-size: 1.2rem;}
+    </style>
+</head>
+<body>
+    <h1>🛡️ J.A.R.V.I.S. TRACKER</h1>
+    
+    <div style="font-size: 0.9rem; color: #8892b0;">ID Elèv la:</div>
+    <div id="device-id">Loading...</div>
+
+    <div class="status-box">
+        <div class="pulse"></div>
+        <div style="font-weight: bold; color: #00ff9d;">GPS ACTIVE</div>
+        <div id="coords">Ap chèche pozisyon...</div>
+    </div>
+
+    <div class="warning">⚠️ Kite paj sa a ouvè epi kite ekran an limen.</div>
+
+    <script>
+        // URL Firebase ou a
+        const FIREBASE_URL = "https://jarvis-tracker-a8136-default-rtdb.firebaseio.com";
+        
+        // Jenere oswa rekipere yon ID inik
+        let deviceId = localStorage.getItem('jarvis_tracker_id');
+        if (!deviceId) {
+            deviceId = 'ELEV-' + Math.floor(1000 + Math.random() * 9000);
+            localStorage.setItem('jarvis_tracker_id', deviceId);
+        }
+        document.getElementById('device-id').innerText = deviceId;
+
+        let wakeLock = null;
+        async function requestWakeLock() {
+            try { 
+                if ('wakeLock' in navigator) { 
+                    wakeLock = await navigator.wakeLock.request('screen'); 
+                } 
+            } catch (err) { console.log(err); }
+        }
+
+        function startTracking() {
+            if (!navigator.geolocation) { 
+                document.getElementById('coords').innerHTML = "<span style='color:red;'>GPS pa sipòte.</span>"; 
+                return; 
+            }
+            
+            navigator.geolocation.watchPosition(
+                async (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    
+                    // Montre kowòdone yo ak mesaj siksè
+                    document.getElementById('coords').innerHTML = `
+                        Lat: ${lat.toFixed(5)}<br>
+                        Lng: ${lng.toFixed(5)}<br><br>
+                        <span style="color:#00ff9d; font-weight:bold;">✅ Voye avèk siksè</span>
+                    `;
+                    
+                    try {
+                        // Voye done yo bay Firebase
+                        await fetch(`${FIREBASE_URL}/trackers/${deviceId}.json`, {
+                            method: 'PUT', 
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                lat: lat, 
+                                lng: lng, 
+                                timestamp: Date.now(), 
+                                status: "ONLINE" 
+                            })
+                        });
+                    } catch (error) { 
+                        console.error("Erè rezo:", error); 
+                        document.getElementById('coords').innerHTML = `
+                            Lat: ${lat.toFixed(5)}<br>
+                            Lng: ${lng.toFixed(5)}<br><br>
+                            <span style="color:#ff5470; font-weight:bold;">❌ Erè rezo</span>
+                        `;
+                    }
+                },
+                (error) => { 
+                    document.getElementById('coords').innerHTML = "<span style='color:red;'>Erè GPS. Tanpri pèmèt lokasyon.</span>"; 
+                },
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+            );
+        }
+
+        window.onload = () => { 
+            requestWakeLock(); 
+            startTracking(); 
+        };
+
+        document.addEventListener('visibilitychange', async () => { 
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                requestWakeLock(); 
+            }
+        });
+    </script>
+</body>
+</html>
