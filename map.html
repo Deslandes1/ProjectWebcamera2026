@@ -5,11 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>J.A.R.V.I.S. - Live Map Tracker</title>
     
-    <!-- Leaflet Map CSS & JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
@@ -20,7 +17,6 @@
         .leaflet-popup-tip { background: #ffffff; }
         .leaflet-popup-content b { color: #0369a1; }
         
-        /* Animasyon pou pwen k ap deplase a */
         @keyframes pulse-green {
             0% { box-shadow: 0 0 0 0 rgba(0, 255, 157, 0.7); }
             70% { box-shadow: 0 0 0 15px rgba(0, 255, 157, 0); }
@@ -41,14 +37,43 @@
             </p>
         </div>
         <div class="flex flex-col items-start md:items-end gap-2 bg-slate-900 p-3 rounded-lg border border-slate-800">
-            <div class="text-xs font-mono">DEVICE ID: <span id="my-device-id" class="text-yellow-400 font-bold text-sm">Loading...</span></div>
+            <div class="text-xs font-mono">DEVICE ID: <span id="my-device-id" class="text-yellow-400 font-bold text-sm">Not Set</span></div>
             <div class="text-xs font-mono flex items-center gap-2">
                 STATUS: <span id="my-gps-status" class="text-red-400 font-bold">WAITING...</span>
             </div>
         </div>
     </header>
 
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 h-[calc(100vh-180px)]">
+    <!-- IDENTIFICATION & PERMISSION FORM -->
+    <div id="setupPanel" class="max-w-xl w-full mx-auto mb-6 bg-slate-900 border border-cyan-500/50 rounded-xl p-6 shadow-2xl">
+        <h2 class="text-lg font-bold text-cyan-400 mb-2 flex items-center gap-2">
+            <i data-lucide="user-check" class="w-5 h-5"></i> Enable GPS Tracking
+        </h2>
+        <p class="text-sm text-slate-400 mb-4">Please enter your name and click the button below to share your live location. Your browser will ask for permission.</p>
+        
+        <label class="block text-xs text-slate-500 uppercase font-bold mb-2">Your Name:</label>
+        <input type="text" id="userNameInput" placeholder="e.g., Gesner or Student 1" 
+               class="w-full p-3 rounded-lg bg-slate-950 border border-slate-700 text-white mb-4 focus:border-cyan-400 outline-none">
+        
+        <button onclick="startTrackingClick()" 
+                class="w-full bg-gradient-to-r from-cyan-500 to-emerald-500 text-black font-bold text-lg p-4 rounded-lg hover:opacity-90 transition shadow-lg flex items-center justify-center gap-2">
+            <i data-lucide="navigation" class="w-5 h-5"></i> 📍 Kòmanse Swivi GPS / Start GPS
+        </button>
+
+        <!-- ERRÈ MESAJ -->
+        <div id="errorBox" class="hidden mt-4 p-4 bg-red-900/30 border border-red-500 rounded-lg text-sm text-red-200">
+            <strong>Permission Denied.</strong> 
+            <p class="mt-1">If you see this, your browser blocked the GPS. Please do this:</p>
+            <ul class="list-disc ml-5 mt-2 space-y-1">
+                <li>Look for a padlock or lock icon next to the URL bar.</li>
+                <li>Tap it and set <b>Location</b> to <b>Allow</b>.</li>
+                <li>Then reload this page and click the button again.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- MAIN MAP CONTENT -->
+    <div id="mapContent" class="hidden grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 h-[calc(100vh-180px)]">
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 overflow-y-auto">
             <h2 class="text-sm font-semibold tracking-wide text-slate-300 uppercase mb-4 flex items-center gap-2">
                 <i data-lucide="list" class="w-4 h-4 text-cyan-400"></i> Connected Devices
@@ -67,113 +92,114 @@
         const FIREBASE_URL = "https://jarvis-tracker-a8136-default-rtdb.firebaseio.com";
         lucide.createIcons();
 
+        let myDeviceId = null;
+        let map = null;
+        let markers = {};
+        let paths = {};
+        let isFirstLoad = true;
+
         // ==========================================
-        // 1. DEVICE IDENTIFICATION (ASK FOR NAME)
+        // 1. START TRACKING (ONLY WHEN BUTTON IS CLICKED)
         // ==========================================
-        let myDeviceId = localStorage.getItem('jarvis_tracker_id');
-        
-        if (!myDeviceId) {
-            let userName = prompt("Please enter your name to identify you on the map (e.g., Gesner, Student 1):");
-            if (!userName) userName = "Unknown";
-            
-            // Jenere yon ID inik ak non an
-            myDeviceId = userName + '-' + Math.floor(1000 + Math.random() * 9000);
+        function startTrackingClick() {
+            const nameInput = document.getElementById('userNameInput').value.trim();
+            const errorBox = document.getElementById('errorBox');
+
+            if (!nameInput) {
+                alert("Please enter your name first!");
+                return;
+            }
+
+            // 1. Sove non an
+            myDeviceId = nameInput + '-' + Math.floor(1000 + Math.random() * 9000);
             localStorage.setItem('jarvis_tracker_id', myDeviceId);
-        }
-        
-        document.getElementById('my-device-id').innerText = myDeviceId;
+            document.getElementById('my-device-id').innerText = myDeviceId;
 
-        // ==========================================
-        // 2. MY GPS TRACKING (HIGH ACCURACY)
-        // ==========================================
-        let wakeLock = null;
-        async function requestWakeLock() {
-            try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
-        }
-
-        function startMyTracking() {
+            // 2. Kache fòm nan epi montre kat la
+            document.getElementById('setupPanel').classList.add('hidden');
+            document.getElementById('mapContent').classList.remove('hidden');
+            
+            // 3. Kòmanse GPS la
             if (!navigator.geolocation) {
                 document.getElementById('my-gps-status').innerText = "NOT SUPPORTED";
                 return;
             }
 
-            const options = {
-                enableHighAccuracy: true, // Fòse GPS telefòn nan
-                timeout: 15000,           // Tann 15 segond pou yon siyal
-                maximumAge: 0             // Pa sèvi ak ansyen pozisyon
-            };
+            const options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
+            const gpsStatus = document.getElementById('my-gps-status');
 
+            gpsStatus.innerText = "REQUESTING GPS...";
+            gpsStatus.className = "text-yellow-400 font-bold";
+
+            // 4. Mande pèmisyon ak watchPosition (Klike sou bouton an satisfè règ navigatè a)
             navigator.geolocation.watchPosition(
                 async (position) => {
                     const lat = position.coords.latitude;
                     const lng = position.coords.longitude;
-                    const accuracy = position.coords.accuracy; // Presizyon an mèt
+                    const accuracy = position.coords.accuracy;
 
-                    // Montre estati a
-                    document.getElementById('my-gps-status').innerText = `SENDING (${Math.round(accuracy)}m)`;
-                    document.getElementById('my-gps-status').className = "text-emerald-400 font-bold";
+                    gpsStatus.innerText = `LIVE (${Math.round(accuracy)}m)`;
+                    gpsStatus.className = "text-emerald-400 font-bold";
 
                     try {
                         await fetch(`${FIREBASE_URL}/trackers/${myDeviceId}.json`, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ 
-                                lat: lat, 
-                                lng: lng, 
-                                accuracy: accuracy,
-                                timestamp: Date.now(), 
-                                status: "ONLINE" 
+                                lat: lat, lng: lng, accuracy: accuracy,
+                                timestamp: Date.now(), status: "ONLINE" 
                             })
                         });
-                    } catch (error) {
-                        document.getElementById('my-gps-status').innerText = "NETWORK ERR";
-                        document.getElementById('my-gps-status').className = "text-red-400 font-bold";
+                    } catch (e) {
+                        gpsStatus.innerText = "NETWORK ERR";
+                        gpsStatus.className = "text-red-400 font-bold";
                     }
                 },
                 (error) => {
-                    document.getElementById('my-gps-status').innerText = "PERMISSION DENIED";
-                    document.getElementById('my-gps-status').className = "text-red-400 font-bold";
+                    console.error("GPS Error:", error);
+                    gpsStatus.innerText = "PERMISSION DENIED";
+                    gpsStatus.className = "text-red-400 font-bold";
+                    errorBox.classList.remove('hidden'); // Montre enstriksyon yo
                 },
                 options
             );
+
+            // 5. Kòmanse kat la
+            initMap();
         }
 
-        window.onload = () => { requestWakeLock(); startMyTracking(); };
-        document.addEventListener('visibilitychange', async () => { 
-            if (wakeLock !== null && document.visibilityState === 'visible') requestWakeLock(); 
-        });
+        // ==========================================
+        // 2. MAP SETUP
+        // ==========================================
+        function initMap() {
+            if (map) return; // Pa kreye l de fwa
+
+            map = L.map('map').setView([18.5392, -72.3364], 13); 
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+
+            setInterval(fetchAllTrackers, 3000);
+            fetchAllTrackers();
+        }
 
         // ==========================================
-        // 3. MAP SETUP
+        // 3. ICONS
         // ==========================================
-        const map = L.map('map').setView([18.5392, -72.3364], 13); 
-        
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors',
-            maxZoom: 19
-        }).addTo(map);
-
-        const markers = {}; 
-        const paths = {}; // Pou trase tras la
-        
-        // Ikon pou lòt moun (Ble)
         const otherIcon = L.divIcon({
             className: 'custom-icon',
             html: '<div style="background-color: #00e5ff; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #ffffff; box-shadow: 0 0 10px #00e5ff;"></div>',
             iconSize: [16, 16], iconAnchor: [8, 8]
         });
-        
-        // Ikon pou ou menm (Vèt k ap bat)
         const myIcon = L.divIcon({
             className: 'custom-icon my-location-icon',
             html: '<div style="background-color: #00ff9d; width: 20px; height: 20px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 15px #00ff9d;"></div>',
             iconSize: [20, 20], iconAnchor: [10, 10]
         });
 
-        let isFirstLoad = true;
-
         // ==========================================
-        // 4. FETCH ALL TRACKERS & UPDATE MAP
+        // 4. FETCH ALL TRACKERS
         // ==========================================
         async function fetchAllTrackers() {
             try {
@@ -195,16 +221,11 @@
                     const accuracy = tracker.accuracy || 0;
                     const time = new Date(tracker.timestamp).toLocaleTimeString();
                     const isMe = (id === myDeviceId);
-                    
-                    // Tcheke si aparèy la poko voye anyen depi 2 minit
                     const isRecent = (Date.now() - tracker.timestamp) < 120000;
-
                     const iconToUse = isMe ? myIcon : otherIcon;
 
-                    // Mete ajou oswa kreye Marker
                     if (markers[id]) {
                         markers[id].setLatLng([lat, lng]);
-                        // Mete ajou tras la
                         if (paths[id]) paths[id].addLatLng([lat, lng]);
                     } else {
                         markers[id] = L.marker([lat, lng], {icon: iconToUse, zIndexOffset: isMe ? 1000 : 0}).addTo(map);
@@ -219,8 +240,6 @@
                     const nameDisplay = isMe ? `<span class="text-emerald-400">${id} (YOU)</span>` : `<span class="text-cyan-400">${id}</span>`;
                     const statusText = isRecent ? '● LIVE' : '● OFFLINE';
                     const statusColor = isRecent ? (isMe ? 'text-emerald-400' : 'text-cyan-400') : 'text-red-400';
-                    
-                    // Si presizyon an twò pòv, avize moun nan
                     const accuracyWarning = accuracy > 100 ? `<br><span class="text-xs text-yellow-400">⚠️ Low Accuracy (${Math.round(accuracy)}m)</span>` : '';
 
                     markers[id].bindPopup(`<b>${isMe ? 'Your Location' : id}</b><br>Updated: ${time}${accuracyWarning}`);
@@ -242,14 +261,10 @@
                 }
 
                 document.getElementById('student-list').innerHTML = listHTML;
-
             } catch (error) {
                 console.error("Erè koneksyon Firebase:", error);
             }
         }
-
-        setInterval(fetchAllTrackers, 3000);
-        fetchAllTrackers();
     </script>
 </body>
 </html>
