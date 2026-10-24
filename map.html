@@ -4,42 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>J.A.R.V.I.S. - Live Map Tracker</title>
-    
-    <!-- Leaflet Map CSS & JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    
     <style>
         body { background-color: #0f172a; margin: 0; font-family: 'Segoe UI', sans-serif; }
-        
-        /* Kat la kounye a ap klè epi li pral byen parèt */
-        #map { 
-            width: 100%; 
-            height: 100%; 
-            min-height: 600px; 
-            z-index: 1; 
-            border-radius: 0.75rem; 
-            background-color: #f8f9fa; /* Fon klè */
-        }
-        
-        /* Ti mòdifikasyon pou popup yo gade byen sou kat klè a */
-        .leaflet-popup-content-wrapper { 
-            background: #ffffff; 
-            color: #0f172a; 
-            border: 2px solid #00e5ff; 
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        }
+        #map { width: 100%; height: 100%; min-height: 600px; z-index: 1; border-radius: 0.75rem; background-color: #f8f9fa; }
+        .leaflet-popup-content-wrapper { background: #ffffff; color: #0f172a; border: 2px solid #00e5ff; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
         .leaflet-popup-tip { background: #ffffff; }
         .leaflet-popup-content b { color: #0369a1; }
     </style>
 </head>
 <body class="min-h-screen text-slate-200 p-6">
-
     <header class="mb-6 border-b border-slate-800 pb-4 flex justify-between items-center">
         <div>
             <h1 class="text-2xl font-bold text-cyan-400 tracking-wider flex items-center gap-3">
@@ -55,7 +32,6 @@
     </header>
 
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-140px)]">
-        <!-- Sidebar: List of Active Students -->
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 overflow-y-auto">
             <h2 class="text-sm font-semibold tracking-wide text-slate-300 uppercase mb-4 flex items-center gap-2">
                 <i data-lucide="list" class="w-4 h-4 text-cyan-400"></i> Active Devices
@@ -64,8 +40,6 @@
                 <p class="text-slate-500 text-sm">Ap tann elèv yo konekte...</p>
             </div>
         </div>
-
-        <!-- Map -->
         <div class="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl relative">
             <div id="map"></div>
         </div>
@@ -75,19 +49,14 @@
         const FIREBASE_URL = "https://jarvis-tracker-a8136-default-rtdb.firebaseio.com";
         lucide.createIcons();
 
-        // 1. Kòmanse Kat la (Leaflet)
+        // KAT KLÈ (VOYAGER) POU L PA FONSE
         const map = L.map('map').setView([18.5392, -72.3364], 13); 
-        
-        // 2. Sèvi ak yon kat klè (Voyager oswa Light) pou l pa fonse
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; OpenStreetMap &copy; CARTO',
             maxZoom: 20
         }).addTo(map);
 
-        // 3. Preparasyon pou Markers yo
         const markers = {}; 
-        
-        // Ikòn ble klere pou elèv yo
         const studentIcon = L.divIcon({
             className: 'custom-icon',
             html: '<div style="background-color: #00e5ff; width: 18px; height: 18px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 15px #00e5ff;"></div>',
@@ -101,60 +70,37 @@
             try {
                 const response = await fetch(`${FIREBASE_URL}/trackers.json`);
                 const data = await response.json();
-
                 if (!data) {
                     document.getElementById('student-list').innerHTML = '<p class="text-slate-500 text-sm">Pa gen elèv ki konekte.</p>';
                     return;
                 }
 
                 let listHTML = '';
-
                 for (const [id, tracker] of Object.entries(data)) {
                     if (!tracker.lat || !tracker.lng) continue;
+                    const lat = tracker.lat, lng = tracker.lng, time = new Date(tracker.timestamp).toLocaleTimeString();
 
-                    const lat = tracker.lat;
-                    const lng = tracker.lng;
-                    const time = new Date(tracker.timestamp).toLocaleTimeString();
-
-                    // Mete ajou oswa kreye Marker sou kat la
-                    if (markers[id]) {
-                        markers[id].setLatLng([lat, lng]);
-                    } else {
+                    if (markers[id]) { markers[id].setLatLng([lat, lng]); } 
+                    else {
                         markers[id] = L.marker([lat, lng], {icon: studentIcon}).addTo(map);
-                        
-                        // Premye fwa yon elèv konekte, santre kat la sou li
-                        if (isFirstLoad) {
-                            map.setView([lat, lng], 16);
-                            isFirstLoad = false;
-                        }
+                        if (isFirstLoad) { map.setView([lat, lng], 16); isFirstLoad = false; }
                     }
 
                     markers[id].bindPopup(`<b>${id}</b><br>Dènye mouvman: ${time}`);
-
-                    // Kreye bwat elèv la nan lis bò gòch la
                     listHTML += `
                         <div class="bg-slate-950/50 p-3 rounded-lg border border-slate-800 cursor-pointer hover:border-cyan-400 transition-colors" onclick="map.setView([${lat}, ${lng}], 17); markers['${id}'].openPopup();">
                             <div class="flex justify-between items-center mb-1">
                                 <span class="font-bold text-cyan-400">${id}</span>
                                 <span class="text-xs text-emerald-400">● ONLINE</span>
                             </div>
-                            <div class="text-xs text-slate-400 font-mono">
-                                Lat: ${lat.toFixed(5)}<br>
-                                Lng: ${lng.toFixed(5)}
-                            </div>
+                            <div class="text-xs text-slate-400 font-mono">Lat: ${lat.toFixed(5)}<br>Lng: ${lng.toFixed(5)}</div>
                             <div class="text-xs text-slate-500 mt-2">${time}</div>
                         </div>
                     `;
                 }
-
                 document.getElementById('student-list').innerHTML = listHTML;
-
-            } catch (error) {
-                console.error("Erè koneksyon Firebase:", error);
-            }
+            } catch (error) { console.error("Erè:", error); }
         }
-
-        // Chèche done yo chak 3 segond
         setInterval(fetchAllTrackers, 3000);
         fetchAllTrackers();
     </script>
