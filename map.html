@@ -15,56 +15,49 @@
     
     <style>
         body { background-color: #0f172a; margin: 0; font-family: 'Segoe UI', sans-serif; }
-        
-        #map { 
-            width: 100%; 
-            height: 100%; 
-            min-height: 600px; 
-            z-index: 1; 
-            border-radius: 0.75rem; 
-            background-color: #f8f9fa; 
-        }
-        
-        /* Popup style pou kat klè a */
-        .leaflet-popup-content-wrapper { 
-            background: #ffffff; 
-            color: #0f172a; 
-            border: 2px solid #00e5ff; 
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        }
+        #map { width: 100%; height: 100%; min-height: 500px; z-index: 1; border-radius: 0.75rem; background-color: #f8f9fa; }
+        .leaflet-popup-content-wrapper { background: #ffffff; color: #0f172a; border: 2px solid #00e5ff; border-radius: 8px; }
         .leaflet-popup-tip { background: #ffffff; }
         .leaflet-popup-content b { color: #0369a1; }
+        
+        /* Animasyon pou pwen k ap deplase a */
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(0, 255, 157, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(0, 255, 157, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 255, 157, 0); }
+        }
+        .my-location-icon { animation: pulse-green 2s infinite; }
     </style>
 </head>
-<body class="min-h-screen text-slate-200 p-6">
+<body class="min-h-screen text-slate-200 p-4 md:p-6 flex flex-col">
 
-    <header class="mb-6 border-b border-slate-800 pb-4 flex justify-between items-center">
+    <header class="mb-4 border-b border-slate-800 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
             <h1 class="text-2xl font-bold text-cyan-400 tracking-wider flex items-center gap-3">
                 <i data-lucide="shield" class="w-8 h-8"></i> J.A.R.V.I.S. LIVE MAP
             </h1>
             <p class="text-sm text-slate-500 mt-1 flex items-center gap-2">
-                <i data-lucide="users" class="w-4 h-4"></i> Student Geolocation Feed
+                <i data-lucide="map-pin" class="w-4 h-4"></i> Real-time multi-device GPS tracking
             </p>
         </div>
-        <div class="text-xs text-emerald-400 font-mono flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> Live Syncing
+        <div class="flex flex-col items-start md:items-end gap-2 bg-slate-900 p-3 rounded-lg border border-slate-800">
+            <div class="text-xs font-mono">DEVICE ID: <span id="my-device-id" class="text-yellow-400 font-bold text-sm">Loading...</span></div>
+            <div class="text-xs font-mono flex items-center gap-2">
+                STATUS: <span id="my-gps-status" class="text-red-400 font-bold">WAITING...</span>
+            </div>
         </div>
     </header>
 
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-140px)]">
-        <!-- Sidebar: List of Active Students -->
-        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 overflow-y-auto">
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 h-[calc(100vh-180px)]">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 overflow-y-auto">
             <h2 class="text-sm font-semibold tracking-wide text-slate-300 uppercase mb-4 flex items-center gap-2">
-                <i data-lucide="list" class="w-4 h-4 text-cyan-400"></i> Active Devices
+                <i data-lucide="list" class="w-4 h-4 text-cyan-400"></i> Connected Devices
             </h2>
             <div id="student-list" class="space-y-3">
-                <p class="text-slate-500 text-sm">Ap tann elèv yo konekte...</p>
+                <p class="text-slate-500 text-sm">Ap tann aparèy yo konekte...</p>
             </div>
         </div>
 
-        <!-- Map -->
         <div class="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl relative">
             <div id="map"></div>
         </div>
@@ -74,35 +67,121 @@
         const FIREBASE_URL = "https://jarvis-tracker-a8136-default-rtdb.firebaseio.com";
         lucide.createIcons();
 
-        // 1. Kòmanse Kat la (Leaflet)
+        // ==========================================
+        // 1. DEVICE IDENTIFICATION (ASK FOR NAME)
+        // ==========================================
+        let myDeviceId = localStorage.getItem('jarvis_tracker_id');
+        
+        if (!myDeviceId) {
+            let userName = prompt("Please enter your name to identify you on the map (e.g., Gesner, Student 1):");
+            if (!userName) userName = "Unknown";
+            
+            // Jenere yon ID inik ak non an
+            myDeviceId = userName + '-' + Math.floor(1000 + Math.random() * 9000);
+            localStorage.setItem('jarvis_tracker_id', myDeviceId);
+        }
+        
+        document.getElementById('my-device-id').innerText = myDeviceId;
+
+        // ==========================================
+        // 2. MY GPS TRACKING (HIGH ACCURACY)
+        // ==========================================
+        let wakeLock = null;
+        async function requestWakeLock() {
+            try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
+        }
+
+        function startMyTracking() {
+            if (!navigator.geolocation) {
+                document.getElementById('my-gps-status').innerText = "NOT SUPPORTED";
+                return;
+            }
+
+            const options = {
+                enableHighAccuracy: true, // Fòse GPS telefòn nan
+                timeout: 15000,           // Tann 15 segond pou yon siyal
+                maximumAge: 0             // Pa sèvi ak ansyen pozisyon
+            };
+
+            navigator.geolocation.watchPosition(
+                async (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const accuracy = position.coords.accuracy; // Presizyon an mèt
+
+                    // Montre estati a
+                    document.getElementById('my-gps-status').innerText = `SENDING (${Math.round(accuracy)}m)`;
+                    document.getElementById('my-gps-status').className = "text-emerald-400 font-bold";
+
+                    try {
+                        await fetch(`${FIREBASE_URL}/trackers/${myDeviceId}.json`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                lat: lat, 
+                                lng: lng, 
+                                accuracy: accuracy,
+                                timestamp: Date.now(), 
+                                status: "ONLINE" 
+                            })
+                        });
+                    } catch (error) {
+                        document.getElementById('my-gps-status').innerText = "NETWORK ERR";
+                        document.getElementById('my-gps-status').className = "text-red-400 font-bold";
+                    }
+                },
+                (error) => {
+                    document.getElementById('my-gps-status').innerText = "PERMISSION DENIED";
+                    document.getElementById('my-gps-status').className = "text-red-400 font-bold";
+                },
+                options
+            );
+        }
+
+        window.onload = () => { requestWakeLock(); startMyTracking(); };
+        document.addEventListener('visibilitychange', async () => { 
+            if (wakeLock !== null && document.visibilityState === 'visible') requestWakeLock(); 
+        });
+
+        // ==========================================
+        // 3. MAP SETUP
+        // ==========================================
         const map = L.map('map').setView([18.5392, -72.3364], 13); 
         
-        // 2. Sèvi ak OpenStreetMap Estanda (PA MANDE OKENN KLE API)
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors',
             maxZoom: 19
         }).addTo(map);
 
-        // 3. Preparasyon pou Markers yo
         const markers = {}; 
+        const paths = {}; // Pou trase tras la
         
-        // Ikòn ble klere pou elèv yo
-        const studentIcon = L.divIcon({
+        // Ikon pou lòt moun (Ble)
+        const otherIcon = L.divIcon({
             className: 'custom-icon',
-            html: '<div style="background-color: #00e5ff; width: 18px; height: 18px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 15px #00e5ff;"></div>',
-            iconSize: [18, 18],
-            iconAnchor: [9, 9]
+            html: '<div style="background-color: #00e5ff; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #ffffff; box-shadow: 0 0 10px #00e5ff;"></div>',
+            iconSize: [16, 16], iconAnchor: [8, 8]
+        });
+        
+        // Ikon pou ou menm (Vèt k ap bat)
+        const myIcon = L.divIcon({
+            className: 'custom-icon my-location-icon',
+            html: '<div style="background-color: #00ff9d; width: 20px; height: 20px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 15px #00ff9d;"></div>',
+            iconSize: [20, 20], iconAnchor: [10, 10]
         });
 
         let isFirstLoad = true;
 
+        // ==========================================
+        // 4. FETCH ALL TRACKERS & UPDATE MAP
+        // ==========================================
         async function fetchAllTrackers() {
             try {
                 const response = await fetch(`${FIREBASE_URL}/trackers.json`);
                 const data = await response.json();
 
                 if (!data) {
-                    document.getElementById('student-list').innerHTML = '<p class="text-slate-500 text-sm">Pa gen elèv ki konekte.</p>';
+                    document.getElementById('student-list').innerHTML = '<p class="text-slate-500 text-sm">Pa gen aparèy ki konekte.</p>';
                     return;
                 }
 
@@ -113,34 +192,50 @@
 
                     const lat = tracker.lat;
                     const lng = tracker.lng;
+                    const accuracy = tracker.accuracy || 0;
                     const time = new Date(tracker.timestamp).toLocaleTimeString();
+                    const isMe = (id === myDeviceId);
+                    
+                    // Tcheke si aparèy la poko voye anyen depi 2 minit
+                    const isRecent = (Date.now() - tracker.timestamp) < 120000;
 
-                    // Mete ajou oswa kreye Marker sou kat la
+                    const iconToUse = isMe ? myIcon : otherIcon;
+
+                    // Mete ajou oswa kreye Marker
                     if (markers[id]) {
                         markers[id].setLatLng([lat, lng]);
+                        // Mete ajou tras la
+                        if (paths[id]) paths[id].addLatLng([lat, lng]);
                     } else {
-                        markers[id] = L.marker([lat, lng], {icon: studentIcon}).addTo(map);
+                        markers[id] = L.marker([lat, lng], {icon: iconToUse, zIndexOffset: isMe ? 1000 : 0}).addTo(map);
+                        paths[id] = L.polyline([[lat, lng]], {color: isMe ? '#00ff9d' : '#00e5ff', weight: 2, opacity: 0.5}).addTo(map);
                         
-                        // Premye fwa yon elèv konekte, santre kat la sou li
-                        if (isFirstLoad) {
+                        if (isFirstLoad && isMe) {
                             map.setView([lat, lng], 16);
                             isFirstLoad = false;
                         }
                     }
 
-                    markers[id].bindPopup(`<b>${id}</b><br>Dènye mouvman: ${time}`);
+                    const nameDisplay = isMe ? `<span class="text-emerald-400">${id} (YOU)</span>` : `<span class="text-cyan-400">${id}</span>`;
+                    const statusText = isRecent ? '● LIVE' : '● OFFLINE';
+                    const statusColor = isRecent ? (isMe ? 'text-emerald-400' : 'text-cyan-400') : 'text-red-400';
+                    
+                    // Si presizyon an twò pòv, avize moun nan
+                    const accuracyWarning = accuracy > 100 ? `<br><span class="text-xs text-yellow-400">⚠️ Low Accuracy (${Math.round(accuracy)}m)</span>` : '';
 
-                    // Kreye bwat elèv la nan lis bò gòch la
+                    markers[id].bindPopup(`<b>${isMe ? 'Your Location' : id}</b><br>Updated: ${time}${accuracyWarning}`);
+
                     listHTML += `
-                        <div class="bg-slate-950/50 p-3 rounded-lg border border-slate-800 cursor-pointer hover:border-cyan-400 transition-colors" onclick="map.setView([${lat}, ${lng}], 17); markers['${id}'].openPopup();">
+                        <div class="bg-slate-950/50 p-3 rounded-lg border ${isMe ? 'border-emerald-500/50' : 'border-slate-800'} cursor-pointer hover:border-cyan-400 transition-colors" onclick="map.setView([${lat}, ${lng}], 17); markers['${id}'].openPopup();">
                             <div class="flex justify-between items-center mb-1">
-                                <span class="font-bold text-cyan-400">${id}</span>
-                                <span class="text-xs text-emerald-400">● ONLINE</span>
+                                <span class="font-bold text-sm">${nameDisplay}</span>
+                                <span class="text-xs ${statusColor}">${statusText}</span>
                             </div>
                             <div class="text-xs text-slate-400 font-mono">
                                 Lat: ${lat.toFixed(5)}<br>
                                 Lng: ${lng.toFixed(5)}
                             </div>
+                            ${accuracyWarning}
                             <div class="text-xs text-slate-500 mt-2">${time}</div>
                         </div>
                     `;
@@ -153,7 +248,6 @@
             }
         }
 
-        // Chèche done yo chak 3 segond
         setInterval(fetchAllTrackers, 3000);
         fetchAllTrackers();
     </script>
