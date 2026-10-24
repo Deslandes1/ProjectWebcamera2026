@@ -44,35 +44,31 @@
         </div>
     </header>
 
-    <!-- IDENTIFICATION & PERMISSION FORM -->
+    <!-- PÒT ANTRÈ (SI SE PREMYE FWA) -->
     <div id="setupPanel" class="max-w-xl w-full mx-auto mb-6 bg-slate-900 border border-cyan-500/50 rounded-xl p-6 shadow-2xl">
         <h2 class="text-lg font-bold text-cyan-400 mb-2 flex items-center gap-2">
-            <i data-lucide="user-check" class="w-5 h-5"></i> Enable GPS Tracking
+            <i data-lucide="user-check" class="w-5 h-5"></i> <span id="setupTitle">Enable GPS Tracking</span>
         </h2>
-        <p class="text-sm text-slate-400 mb-4">Please enter your name and click the button below to share your live location. Your browser will ask for permission.</p>
+        <p class="text-sm text-slate-400 mb-4" id="setupDesc">Please enter your name and click the button below to share your live location.</p>
         
-        <label class="block text-xs text-slate-500 uppercase font-bold mb-2">Your Name:</label>
-        <input type="text" id="userNameInput" placeholder="e.g., Gesner or Student 1" 
-               class="w-full p-3 rounded-lg bg-slate-950 border border-slate-700 text-white mb-4 focus:border-cyan-400 outline-none">
+        <div id="nameInputGroup">
+            <label class="block text-xs text-slate-500 uppercase font-bold mb-2">Your Name:</label>
+            <input type="text" id="userNameInput" placeholder="e.g., Gesner or Student 1" 
+                   class="w-full p-3 rounded-lg bg-slate-950 border border-slate-700 text-white mb-4 focus:border-cyan-400 outline-none">
+        </div>
         
         <button onclick="startTrackingClick()" 
                 class="w-full bg-gradient-to-r from-cyan-500 to-emerald-500 text-black font-bold text-lg p-4 rounded-lg hover:opacity-90 transition shadow-lg flex items-center justify-center gap-2">
-            <i data-lucide="navigation" class="w-5 h-5"></i> 📍 Kòmanse Swivi GPS / Start GPS
+            <i data-lucide="navigation" class="w-5 h-5"></i> <span id="startBtnText">📍 Start GPS</span>
         </button>
 
-        <!-- ERRÈ MESAJ -->
         <div id="errorBox" class="hidden mt-4 p-4 bg-red-900/30 border border-red-500 rounded-lg text-sm text-red-200">
-            <strong>Permission Denied.</strong> 
-            <p class="mt-1">If you see this, your browser blocked the GPS. Please do this:</p>
-            <ul class="list-disc ml-5 mt-2 space-y-1">
-                <li>Look for a padlock or lock icon next to the URL bar.</li>
-                <li>Tap it and set <b>Location</b> to <b>Allow</b>.</li>
-                <li>Then reload this page and click the button again.</li>
-            </ul>
+            <strong>GPS Permission Denied.</strong> 
+            <p class="mt-1">Please tap the lock icon in your URL bar, allow Location, and click the button again.</p>
         </div>
     </div>
 
-    <!-- MAIN MAP CONTENT -->
+    <!-- KAT LA -->
     <div id="mapContent" class="hidden grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 h-[calc(100vh-180px)]">
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 overflow-y-auto">
             <h2 class="text-sm font-semibold tracking-wide text-slate-300 uppercase mb-4 flex items-center gap-2">
@@ -92,38 +88,53 @@
         const FIREBASE_URL = "https://jarvis-tracker-a8136-default-rtdb.firebaseio.com";
         lucide.createIcons();
 
-        let myDeviceId = null;
+        let myDeviceId = localStorage.getItem('jarvis_tracker_id');
         let map = null;
         let markers = {};
         let paths = {};
         let isFirstLoad = true;
+        let isTracking = false;
 
         // ==========================================
-        // 1. START TRACKING (ONLY WHEN BUTTON IS CLICKED)
+        // 1. CHECKE SI YON MOUN TE DEJA KONEKTE
+        // ==========================================
+        window.onload = () => {
+            if (myDeviceId) {
+                // Si non an sove deja, kache bwat non an epi mande klike
+                document.getElementById('my-device-id').innerText = myDeviceId;
+                document.getElementById('nameInputGroup').style.display = 'none';
+                document.getElementById('setupTitle').innerText = "Welcome Back!";
+                document.getElementById('setupDesc').innerText = "Click the button below to resume sharing your location.";
+                document.getElementById('startBtnText').innerText = "📍 Resume Live GPS";
+            }
+        };
+
+        // ==========================================
+        // 2. KÒMANSE SWIVI GPS (SÈLMAN LÈ W KLIKE)
         // ==========================================
         function startTrackingClick() {
-            const nameInput = document.getElementById('userNameInput').value.trim();
+            const nameInput = document.getElementById('userNameInput');
             const errorBox = document.getElementById('errorBox');
 
-            if (!nameInput) {
-                alert("Please enter your name first!");
-                return;
+            // Si se premye fwa, sove non an
+            if (!myDeviceId) {
+                const name = nameInput.value.trim();
+                if (!name) { alert("Please enter your name first!"); return; }
+                myDeviceId = name + '-' + Math.floor(1000 + Math.random() * 9000);
+                localStorage.setItem('jarvis_tracker_id', myDeviceId);
+                document.getElementById('my-device-id').innerText = myDeviceId;
             }
 
-            // 1. Sove non an
-            myDeviceId = nameInput + '-' + Math.floor(1000 + Math.random() * 9000);
-            localStorage.setItem('jarvis_tracker_id', myDeviceId);
-            document.getElementById('my-device-id').innerText = myDeviceId;
-
-            // 2. Kache fòm nan epi montre kat la
+            // Kache fòm nan epi montre kat la
             document.getElementById('setupPanel').classList.add('hidden');
             document.getElementById('mapContent').classList.remove('hidden');
             
-            // 3. Kòmanse GPS la
             if (!navigator.geolocation) {
                 document.getElementById('my-gps-status').innerText = "NOT SUPPORTED";
                 return;
             }
+
+            requestWakeLock(); // Kenbe ekran an limen si posib
 
             const options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
             const gpsStatus = document.getElementById('my-gps-status');
@@ -131,7 +142,9 @@
             gpsStatus.innerText = "REQUESTING GPS...";
             gpsStatus.className = "text-yellow-400 font-bold";
 
-            // 4. Mande pèmisyon ak watchPosition (Klike sou bouton an satisfè règ navigatè a)
+            isTracking = true;
+
+            // Kòmanse swiv pozisyon (Sa a ap kontinye chak fwa ekran an limen)
             navigator.geolocation.watchPosition(
                 async (position) => {
                     const lat = position.coords.latitude;
@@ -156,37 +169,64 @@
                     }
                 },
                 (error) => {
-                    console.error("GPS Error:", error);
                     gpsStatus.innerText = "PERMISSION DENIED";
                     gpsStatus.className = "text-red-400 font-bold";
-                    errorBox.classList.remove('hidden'); // Montre enstriksyon yo
+                    errorBox.classList.remove('hidden');
                 },
                 options
             );
 
-            // 5. Kòmanse kat la
+            // Kòmanse kat la
             initMap();
         }
 
         // ==========================================
-        // 2. MAP SETUP
+        // 3. WAKE LOCK (KENBE EKRAN LIMEN)
+        // ==========================================
+        let wakeLock = null;
+        async function requestWakeLock() {
+            try { 
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen'); 
+                }
+            } catch (err) { console.log("WakeLock not supported"); }
+        }
+
+        // Lè ekran an limen ankò, imedyatman voye yon pozisyon
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && isTracking) {
+                requestWakeLock();
+                // Fòse yon mizajou imedyat
+                navigator.geolocation.getCurrentPosition(async (pos) => {
+                    try {
+                        await fetch(`${FIREBASE_URL}/trackers/${myDeviceId}.json`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                lat: pos.coords.latitude, lng: pos.coords.longitude, 
+                                accuracy: pos.coords.accuracy,
+                                timestamp: Date.now(), status: "ONLINE" 
+                            })
+                        });
+                    } catch(e) {}
+                }, null, { enableHighAccuracy: true });
+            }
+        });
+
+        // ==========================================
+        // 4. KAT LA & FIREBASE
         // ==========================================
         function initMap() {
-            if (map) return; // Pa kreye l de fwa
-
+            if (map) return; 
             map = L.map('map').setView([18.5392, -72.3364], 13); 
             L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap contributors',
-                maxZoom: 19
+                attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
             }).addTo(map);
 
             setInterval(fetchAllTrackers, 3000);
             fetchAllTrackers();
         }
 
-        // ==========================================
-        // 3. ICONS
-        // ==========================================
         const otherIcon = L.divIcon({
             className: 'custom-icon',
             html: '<div style="background-color: #00e5ff; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #ffffff; box-shadow: 0 0 10px #00e5ff;"></div>',
@@ -198,9 +238,6 @@
             iconSize: [20, 20], iconAnchor: [10, 10]
         });
 
-        // ==========================================
-        // 4. FETCH ALL TRACKERS
-        // ==========================================
         async function fetchAllTrackers() {
             try {
                 const response = await fetch(`${FIREBASE_URL}/trackers.json`);
