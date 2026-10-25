@@ -23,6 +23,16 @@
             100% { box-shadow: 0 0 0 0 rgba(0, 255, 157, 0); }
         }
         .my-location-icon { animation: pulse-green 2s infinite; }
+
+        /* Ti badj ki parèt lè w touche ekran an */
+        #gpsToast {
+            position: fixed; bottom: 20px; right: 20px; z-index: 9999;
+            background: #00ff9d; color: #04121a; font-weight: 800; font-size: 13px;
+            padding: 10px 18px; border-radius: 999px; box-shadow: 0 0 20px rgba(0,255,157,.6);
+            opacity: 0; transform: translateY(15px); pointer-events: none;
+            transition: opacity .2s ease, transform .2s ease;
+        }
+        #gpsToast.show { opacity: 1; transform: translateY(0); }
     </style>
 </head>
 <body class="min-h-screen text-slate-200 p-4 md:p-6 flex flex-col">
@@ -84,6 +94,9 @@
         </div>
     </div>
 
+    <!-- TOAST: parèt chak fwa w touche ekran an -->
+    <div id="gpsToast">📍 GPS SYNC</div>
+
     <script>
         const FIREBASE_URL = "https://jarvis-tracker-a8136-default-rtdb.firebaseio.com";
         lucide.createIcons();
@@ -95,12 +108,20 @@
         let isFirstLoad = true;
         let isTracking = false;
 
+        // ==== NOUVO: jesyon GPS ak touch ====
+        let watchId = null;              // ID watchPosition a (pou nou ka rekòmanse l)
+        let lastFixTime = 0;             // Dènye fwa GPS te bay yon pozisyon
+        let lastTouchSync = 0;           // Pou evite twòp rechèch (throttle)
+        const TOUCH_SYNC_INTERVAL = 1500; // ms — minimòm ant 2 touch
+        const WATCH_STALE_MS = 15000;     // si pa gen fix depi 15s, nou rekòmanse watch la
+
+        const GPS_OPTIONS = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
+
         // ==========================================
         // 1. CHECKE SI YON MOUN TE DEJA KONEKTE
         // ==========================================
         window.onload = () => {
             if (myDeviceId) {
-                // Si non an sove deja, kache bwat non an epi mande klike
                 document.getElementById('my-device-id').innerText = myDeviceId;
                 document.getElementById('nameInputGroup').style.display = 'none';
                 document.getElementById('setupTitle').innerText = "Welcome Back!";
@@ -116,7 +137,6 @@
             const nameInput = document.getElementById('userNameInput');
             const errorBox = document.getElementById('errorBox');
 
-            // Si se premye fwa, sove non an
             if (!myDeviceId) {
                 const name = nameInput.value.trim();
                 if (!name) { alert("Please enter your name first!"); return; }
@@ -125,63 +145,119 @@
                 document.getElementById('my-device-id').innerText = myDeviceId;
             }
 
-            // Kache fòm nan epi montre kat la
             document.getElementById('setupPanel').classList.add('hidden');
             document.getElementById('mapContent').classList.remove('hidden');
             
             if (!navigator.geolocation) {
-                document.getElementById('my-gps-status').innerText = "NOT SUPPORTED";
+                setGpsStatus("NOT SUPPORTED", "text-red-400");
                 return;
             }
 
-            requestWakeLock(); // Kenbe ekran an limen si posib
-
-            const options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
-            const gpsStatus = document.getElementById('my-gps-status');
-
-            gpsStatus.innerText = "REQUESTING GPS...";
-            gpsStatus.className = "text-yellow-400 font-bold";
+            requestWakeLock();
 
             isTracking = true;
+            lastTouchSync = Date.now();   // anpeche doub-deklanchman ak click la menm
 
-            // Kòmanse swiv pozisyon (Sa a ap kontinye chak fwa ekran an limen)
-            navigator.geolocation.watchPosition(
-                async (position) => {
-                    const lat = position.coords.latitude;
-                    const lng = position.coords.longitude;
-                    const accuracy = position.coords.accuracy;
+            setGpsStatus("REQUESTING GPS...", "text-yellow-400");
 
-                    gpsStatus.innerText = `LIVE (${Math.round(accuracy)}m)`;
-                    gpsStatus.className = "text-emerald-400 font-bold";
-
-                    try {
-                        await fetch(`${FIREBASE_URL}/trackers/${myDeviceId}.json`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                                lat: lat, lng: lng, accuracy: accuracy,
-                                timestamp: Date.now(), status: "ONLINE" 
-                            })
-                        });
-                    } catch (e) {
-                        gpsStatus.innerText = "NETWORK ERR";
-                        gpsStatus.className = "text-red-400 font-bold";
-                    }
-                },
-                (error) => {
-                    gpsStatus.innerText = "PERMISSION DENIED";
-                    gpsStatus.className = "text-red-400 font-bold";
-                    errorBox.classList.remove('hidden');
-                },
-                options
-            );
-
-            // Kòmanse kat la
+            startWatch();                 // kòmanse watch la
             initMap();
         }
 
         // ==========================================
-        // 3. WAKE LOCK (KENBE EKRAN LIMEN)
+        // 3. ZOUTI GPS (WATCH + ONE-SHOT)
+        // ==========================================
+        function setGpsStatus(text, colorClass) {
+            const el = document.getElementById('my-gps-status');
+            el.innerText = text;
+            el.className = colorClass + " font-bold";
+        }
+
+        function onGpsSuccess(position) {
+            lastFixTime = Date.now();
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+
+            setGpsStatus(`LIVE (${Math.round(accuracy)}m)`, "text-emerald-400");
+            pushToFirebase(lat, lng, accuracy);
+        }
+
+        function onGpsError(error) {
+            setGpsStatus("PERMISSION DENIED", "text-red-400");
+            document.getElementById('errorBox').classList.remove('hidden');
+        }
+
+        async function pushToFirebase(lat, lng, accuracy) {
+            try {
+                await fetch(`${FIREBASE_URL}/trackers/${myDeviceId}.json`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        lat: lat, lng: lng, accuracy: accuracy,
+                        timestamp: Date.now(), status: "ONLINE" 
+                    })
+                });
+            } catch (e) {
+                setGpsStatus("NETWORK ERR", "text-red-400");
+            }
+        }
+
+        // Kòmanse (oswa rekòmanse) watchPosition a
+        function startWatch() {
+            if (!navigator.geolocation) return;
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            watchId = navigator.geolocation.watchPosition(onGpsSuccess, onGpsError, GPS_OPTIONS);
+        }
+
+        // ==========================================
+        // 4. ⭐ TOUCH EKRAN = GPS LIMEN / RAFRAICHI
+        // ==========================================
+        function forceGpsUpdate(bypassThrottle = false) {
+            if (!isTracking) return;                       // poko kòmanse → pa fè anyen
+
+            const now = Date.now();
+            if (!bypassThrottle && (now - lastTouchSync) < TOUCH_SYNC_INTERVAL) return;
+            lastTouchSync = now;
+
+            setGpsStatus("SYNCING...", "text-yellow-400");
+            showToast();
+
+            // Si watch la sanble mouri (ekran te fèmen, tab nan background...), relanse l
+            if (watchId === null || (now - lastFixTime) > WATCH_STALE_MS) {
+                startWatch();
+            }
+
+            // Yon sèl rechèch imedyat pou yon pozisyon fre touswit
+            navigator.geolocation.getCurrentPosition(
+                onGpsSuccess,
+                () => { /* watch la rete viv, nou pa touye l */ },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        }
+
+        let toastTimer = null;
+        function showToast() {
+            const toast = document.getElementById('gpsToast');
+            toast.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toast.classList.remove('show'), 1200);
+        }
+
+        // Ekoute touch/click sou TOUT ekran an (capture: true → li pase anvan Leaflet)
+        function attachTouchListeners() {
+            const handler = () => forceGpsUpdate(false);
+            document.addEventListener('touchstart', handler, { passive: true, capture: true });
+            document.addEventListener('pointerdown', handler, { passive: true, capture: true });
+            document.addEventListener('click', handler, { passive: true, capture: true });
+        }
+        attachTouchListeners();
+
+        // ==========================================
+        // 5. WAKE LOCK (KENBE EKRAN LIMEN)
         // ==========================================
         let wakeLock = null;
         async function requestWakeLock() {
@@ -192,29 +268,16 @@
             } catch (err) { console.log("WakeLock not supported"); }
         }
 
-        // Lè ekran an limen ankò, imedyatman voye yon pozisyon
+        // Lè ekran an limen ankò, fòse yon mizajou GPS
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible' && isTracking) {
                 requestWakeLock();
-                // Fòse yon mizajou imedyat
-                navigator.geolocation.getCurrentPosition(async (pos) => {
-                    try {
-                        await fetch(`${FIREBASE_URL}/trackers/${myDeviceId}.json`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                                lat: pos.coords.latitude, lng: pos.coords.longitude, 
-                                accuracy: pos.coords.accuracy,
-                                timestamp: Date.now(), status: "ONLINE" 
-                            })
-                        });
-                    } catch(e) {}
-                }, null, { enableHighAccuracy: true });
+                forceGpsUpdate(true);   // bypass throttle: ekran limen = mizajou imedyat
             }
         });
 
         // ==========================================
-        // 4. KAT LA & FIREBASE
+        // 6. KAT LA & FIREBASE
         // ==========================================
         function initMap() {
             if (map) return; 
