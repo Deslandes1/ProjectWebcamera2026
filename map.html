@@ -24,9 +24,22 @@
         }
         .my-location-icon { animation: pulse-green 2s infinite; }
 
+        /* Bouton Locate Me */
+        #locateMeBtn {
+            position: absolute; bottom: 16px; right: 16px; z-index: 1001;
+            width: 48px; height: 48px; border-radius: 50%;
+            background: linear-gradient(135deg, #06b6d4, #10b981);
+            color: #04121a; border: 2px solid #ffffff;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 0 20px rgba(0,255,157,.5); cursor: pointer;
+            transition: transform .15s ease;
+        }
+        #locateMeBtn:hover { transform: scale(1.08); }
+        #locateMeBtn:active { transform: scale(0.95); }
+
         /* Ti badj ki parèt lè w touche ekran an */
         #gpsToast {
-            position: fixed; bottom: 20px; right: 20px; z-index: 9999;
+            position: fixed; bottom: 20px; left: 20px; z-index: 9999;
             background: #00ff9d; color: #04121a; font-weight: 800; font-size: 13px;
             padding: 10px 18px; border-radius: 999px; box-shadow: 0 0 20px rgba(0,255,157,.6);
             opacity: 0; transform: translateY(15px); pointer-events: none;
@@ -91,6 +104,10 @@
 
         <div class="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl relative">
             <div id="map"></div>
+            <!-- BOUTON LOCATE ME -->
+            <button id="locateMeBtn" onclick="centerOnMe()" title="Center on my location">
+                <i data-lucide="crosshair" class="w-6 h-6"></i>
+            </button>
         </div>
     </div>
 
@@ -105,16 +122,21 @@
         let map = null;
         let markers = {};
         let paths = {};
-        let isFirstLoad = true;
         let isTracking = false;
 
-        // ==== NOUVO: jesyon GPS ak touch ====
-        let watchId = null;              // ID watchPosition a (pou nou ka rekòmanse l)
-        let lastFixTime = 0;             // Dènye fwa GPS te bay yon pozisyon
-        let lastTouchSync = 0;           // Pou evite twòp rechèch (throttle)
-        const TOUCH_SYNC_INTERVAL = 1500; // ms — minimòm ant 2 touch
-        const WATCH_STALE_MS = 15000;     // si pa gen fix depi 15s, nou rekòmanse watch la
+        // ==== NOUVO: lokal self tracking (endepandan de Firebase) ====
+        let localSelf = null;          // { lat, lng, accuracy, timestamp }
+        let myMarker = null;
+        let myAccuracyCircle = null;
+        let myPath = null;
+        let mapCenteredOnSelf = false;
 
+        // ==== GPS / touch jesyon ====
+        let watchId = null;
+        let lastFixTime = 0;
+        let lastTouchSync = 0;
+        const TOUCH_SYNC_INTERVAL = 1500;
+        const WATCH_STALE_MS = 15000;
         const GPS_OPTIONS = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
 
         // ==========================================
@@ -131,7 +153,7 @@
         };
 
         // ==========================================
-        // 2. KÒMANSE SWIVI GPS (SÈLMAN LÈ W KLIKE)
+        // 2. KÒMANSE SWIVI GPS
         // ==========================================
         function startTrackingClick() {
             const nameInput = document.getElementById('userNameInput');
@@ -154,18 +176,16 @@
             }
 
             requestWakeLock();
-
             isTracking = true;
-            lastTouchSync = Date.now();   // anpeche doub-deklanchman ak click la menm
-
+            lastTouchSync = Date.now();
             setGpsStatus("REQUESTING GPS...", "text-yellow-400");
 
-            startWatch();                 // kòmanse watch la
+            startWatch();
             initMap();
         }
 
         // ==========================================
-        // 3. ZOUTI GPS (WATCH + ONE-SHOT)
+        // 3. ZOUTI GPS
         // ==========================================
         function setGpsStatus(text, colorClass) {
             const el = document.getElementById('my-gps-status');
@@ -179,6 +199,11 @@
             const lng = position.coords.longitude;
             const accuracy = position.coords.accuracy;
 
+            // 1) Mete ajou pozisyon pa w IMEDYATMAN sou kat la
+            localSelf = { lat, lng, accuracy, timestamp: Date.now() };
+            updateMyLocationOnMap();
+
+            // 2) Voye bay Firebase pou lòt moun
             setGpsStatus(`LIVE (${Math.round(accuracy)}m)`, "text-emerald-400");
             pushToFirebase(lat, lng, accuracy);
         }
@@ -203,7 +228,6 @@
             }
         }
 
-        // Kòmanse (oswa rekòmanse) watchPosition a
         function startWatch() {
             if (!navigator.geolocation) return;
             if (watchId !== null) {
@@ -214,11 +238,55 @@
         }
 
         // ==========================================
-        // 4. ⭐ TOUCH EKRAN = GPS LIMEN / RAFRAICHI
+        // 4. AFICHE POZISYON PA W SOU KAT LA (NOUVO)
+        // ==========================================
+        function updateMyLocationOnMap() {
+            if (!map || !localSelf) return;
+            const { lat, lng, accuracy } = localSelf;
+            const acc = accuracy || 20;
+
+            if (!myMarker) {
+                myMarker = L.marker([lat, lng], { icon: myIcon, zIndexOffset: 2000 }).addTo(map);
+                myMarker.bindPopup('<b>Your Location</b>');
+
+                myAccuracyCircle = L.circle([lat, lng], {
+                    radius: acc,
+                    color: '#00ff9d', weight: 1,
+                    fillColor: '#00ff9d', fillOpacity: 0.10
+                }).addTo(map);
+
+                myPath = L.polyline([[lat, lng]], {
+                    color: '#00ff9d', weight: 3, opacity: 0.55
+                }).addTo(map);
+            } else {
+                myMarker.setLatLng([lat, lng]);
+                myAccuracyCircle.setLatLng([lat, lng]).setRadius(acc);
+                myPath.addLatLng([lat, lng]);
+            }
+
+            // Santre kat la sou ou premye fwa GPS la reponn
+            if (!mapCenteredOnSelf) {
+                map.setView([lat, lng], 16);
+                mapCenteredOnSelf = true;
+            }
+        }
+
+        // Bouton "Locate Me"
+        function centerOnMe() {
+            if (!map) return;
+            if (localSelf) {
+                map.setView([localSelf.lat, localSelf.lng], 17);
+                if (myMarker) myMarker.openPopup();
+            } else {
+                forceGpsUpdate(true);
+            }
+        }
+
+        // ==========================================
+        // 5. TOUCH EKRAN = GPS RAFRAICHI
         // ==========================================
         function forceGpsUpdate(bypassThrottle = false) {
-            if (!isTracking) return;                       // poko kòmanse → pa fè anyen
-
+            if (!isTracking) return;
             const now = Date.now();
             if (!bypassThrottle && (now - lastTouchSync) < TOUCH_SYNC_INTERVAL) return;
             lastTouchSync = now;
@@ -226,15 +294,13 @@
             setGpsStatus("SYNCING...", "text-yellow-400");
             showToast();
 
-            // Si watch la sanble mouri (ekran te fèmen, tab nan background...), relanse l
             if (watchId === null || (now - lastFixTime) > WATCH_STALE_MS) {
                 startWatch();
             }
 
-            // Yon sèl rechèch imedyat pou yon pozisyon fre touswit
             navigator.geolocation.getCurrentPosition(
                 onGpsSuccess,
-                () => { /* watch la rete viv, nou pa touye l */ },
+                () => {},
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
         }
@@ -247,7 +313,6 @@
             toastTimer = setTimeout(() => toast.classList.remove('show'), 1200);
         }
 
-        // Ekoute touch/click sou TOUT ekran an (capture: true → li pase anvan Leaflet)
         function attachTouchListeners() {
             const handler = () => forceGpsUpdate(false);
             document.addEventListener('touchstart', handler, { passive: true, capture: true });
@@ -257,7 +322,7 @@
         attachTouchListeners();
 
         // ==========================================
-        // 5. WAKE LOCK (KENBE EKRAN LIMEN)
+        // 6. WAKE LOCK
         // ==========================================
         let wakeLock = null;
         async function requestWakeLock() {
@@ -268,16 +333,15 @@
             } catch (err) { console.log("WakeLock not supported"); }
         }
 
-        // Lè ekran an limen ankò, fòse yon mizajou GPS
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible' && isTracking) {
                 requestWakeLock();
-                forceGpsUpdate(true);   // bypass throttle: ekran limen = mizajou imedyat
+                forceGpsUpdate(true);
             }
         });
 
         // ==========================================
-        // 6. KAT LA & FIREBASE
+        // 7. KAT LA & FIREBASE (lòt moun)
         // ==========================================
         function initMap() {
             if (map) return; 
@@ -302,66 +366,84 @@
         });
 
         async function fetchAllTrackers() {
+            let listHTML = '';
+
+            // ---- 1) KAT PA W (soti nan GPS lokal la, toujou an premye) ----
+            if (localSelf) {
+                const sTime = new Date(localSelf.timestamp).toLocaleTimeString();
+                const sAcc = Math.round(localSelf.accuracy || 0);
+                const sWarn = (localSelf.accuracy || 0) > 100 ? `<br><span class="text-xs text-yellow-400">⚠️ Low Accuracy (${sAcc}m)</span>` : '';
+                listHTML += `
+                    <div class="bg-slate-950/50 p-3 rounded-lg border border-emerald-500/50 cursor-pointer hover:border-cyan-400 transition-colors" onclick="centerOnMe()">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-bold text-sm text-emerald-400">${myDeviceId} (YOU)</span>
+                            <span class="text-xs text-emerald-400">● LIVE</span>
+                        </div>
+                        <div class="text-xs text-slate-400 font-mono">
+                            Lat: ${localSelf.lat.toFixed(5)}<br>
+                            Lng: ${localSelf.lng.toFixed(5)}
+                        </div>
+                        ${sWarn}
+                        <div class="text-xs text-slate-500 mt-2">${sTime}</div>
+                    </div>
+                `;
+            }
+
+            // ---- 2) LÒT APARÈY YO (soti nan Firebase) ----
             try {
                 const response = await fetch(`${FIREBASE_URL}/trackers.json`);
                 const data = await response.json();
 
-                if (!data) {
-                    document.getElementById('student-list').innerHTML = '<p class="text-slate-500 text-sm">Pa gen aparèy ki konekte.</p>';
-                    return;
-                }
+                if (data) {
+                    for (const [id, tracker] of Object.entries(data)) {
+                        if (id === myDeviceId) continue;                 // pa doub-poze tèt ou
+                        if (!tracker.lat || !tracker.lng) continue;
 
-                let listHTML = '';
+                        const lat = tracker.lat;
+                        const lng = tracker.lng;
+                        const accuracy = tracker.accuracy || 0;
+                        const time = new Date(tracker.timestamp).toLocaleTimeString();
+                        const isRecent = (Date.now() - tracker.timestamp) < 120000;
 
-                for (const [id, tracker] of Object.entries(data)) {
-                    if (!tracker.lat || !tracker.lng) continue;
-
-                    const lat = tracker.lat;
-                    const lng = tracker.lng;
-                    const accuracy = tracker.accuracy || 0;
-                    const time = new Date(tracker.timestamp).toLocaleTimeString();
-                    const isMe = (id === myDeviceId);
-                    const isRecent = (Date.now() - tracker.timestamp) < 120000;
-                    const iconToUse = isMe ? myIcon : otherIcon;
-
-                    if (markers[id]) {
-                        markers[id].setLatLng([lat, lng]);
-                        if (paths[id]) paths[id].addLatLng([lat, lng]);
-                    } else {
-                        markers[id] = L.marker([lat, lng], {icon: iconToUse, zIndexOffset: isMe ? 1000 : 0}).addTo(map);
-                        paths[id] = L.polyline([[lat, lng]], {color: isMe ? '#00ff9d' : '#00e5ff', weight: 2, opacity: 0.5}).addTo(map);
-                        
-                        if (isFirstLoad && isMe) {
-                            map.setView([lat, lng], 16);
-                            isFirstLoad = false;
+                        if (markers[id]) {
+                            markers[id].setLatLng([lat, lng]);
+                            if (paths[id]) paths[id].addLatLng([lat, lng]);
+                        } else {
+                            markers[id] = L.marker([lat, lng], { icon: otherIcon }).addTo(map);
+                            paths[id] = L.polyline([[lat, lng]], { color: '#00e5ff', weight: 2, opacity: 0.5 }).addTo(map);
                         }
+
+                        const statusText = isRecent ? '● LIVE' : '● OFFLINE';
+                        const statusColor = isRecent ? 'text-cyan-400' : 'text-red-400';
+                        const accuracyWarning = accuracy > 100 ? `<br><span class="text-xs text-yellow-400">⚠️ Low Accuracy (${Math.round(accuracy)}m)</span>` : '';
+
+                        markers[id].bindPopup(`<b>${id}</b><br>Updated: ${time}${accuracyWarning}`);
+
+                        listHTML += `
+                            <div class="bg-slate-950/50 p-3 rounded-lg border border-slate-800 cursor-pointer hover:border-cyan-400 transition-colors" onclick="map.setView([${lat}, ${lng}], 17); markers['${id}'].openPopup();">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="font-bold text-sm text-cyan-400">${id}</span>
+                                    <span class="text-xs ${statusColor}">${statusText}</span>
+                                </div>
+                                <div class="text-xs text-slate-400 font-mono">
+                                    Lat: ${lat.toFixed(5)}<br>
+                                    Lng: ${lng.toFixed(5)}
+                                </div>
+                                ${accuracyWarning}
+                                <div class="text-xs text-slate-500 mt-2">${time}</div>
+                            </div>
+                        `;
                     }
-
-                    const nameDisplay = isMe ? `<span class="text-emerald-400">${id} (YOU)</span>` : `<span class="text-cyan-400">${id}</span>`;
-                    const statusText = isRecent ? '● LIVE' : '● OFFLINE';
-                    const statusColor = isRecent ? (isMe ? 'text-emerald-400' : 'text-cyan-400') : 'text-red-400';
-                    const accuracyWarning = accuracy > 100 ? `<br><span class="text-xs text-yellow-400">⚠️ Low Accuracy (${Math.round(accuracy)}m)</span>` : '';
-
-                    markers[id].bindPopup(`<b>${isMe ? 'Your Location' : id}</b><br>Updated: ${time}${accuracyWarning}`);
-
-                    listHTML += `
-                        <div class="bg-slate-950/50 p-3 rounded-lg border ${isMe ? 'border-emerald-500/50' : 'border-slate-800'} cursor-pointer hover:border-cyan-400 transition-colors" onclick="map.setView([${lat}, ${lng}], 17); markers['${id}'].openPopup();">
-                            <div class="flex justify-between items-center mb-1">
-                                <span class="font-bold text-sm">${nameDisplay}</span>
-                                <span class="text-xs ${statusColor}">${statusText}</span>
-                            </div>
-                            <div class="text-xs text-slate-400 font-mono">
-                                Lat: ${lat.toFixed(5)}<br>
-                                Lng: ${lng.toFixed(5)}
-                            </div>
-                            ${accuracyWarning}
-                            <div class="text-xs text-slate-500 mt-2">${time}</div>
-                        </div>
-                    `;
                 }
 
+                if (!listHTML) {
+                    listHTML = '<p class="text-slate-500 text-sm">Pa gen lòt aparèy ki konekte.</p>';
+                }
                 document.getElementById('student-list').innerHTML = listHTML;
             } catch (error) {
+                // Menm si Firebase pa reponn, pozisyon pa w rete sou kat la
+                if (!listHTML) listHTML = '<p class="text-slate-500 text-sm">Pa gen koneksyon rezo.</p>';
+                document.getElementById('student-list').innerHTML = listHTML;
                 console.error("Erè koneksyon Firebase:", error);
             }
         }
