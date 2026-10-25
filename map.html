@@ -62,9 +62,16 @@
         #adminLoginBtn:hover { border-color: #06b6d4; color: #22d3ee; }
         #adminLoginBtn.is-admin { background: #f59e0b; color: #000; border-color: #fbbf24; }
 
-        #alertEmailRow { display: flex; align-items: center; gap: 6px; font-size: 11px; font-family: monospace; color: #94a3b8; }
-        #alertEmailRow .email-val { color: #22d3ee; font-weight: 700; }
-        #alertEmailRow button { color: #64748b; text-decoration: underline; cursor: pointer; background: none; border: none; font-size: 11px; }
+        .email-row {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 11px; font-family: monospace; color: #94a3b8;
+        }
+        .email-row .email-val { color: #22d3ee; font-weight: 700; }
+        .email-row .email-val.emg { color: #f87171; }
+        .email-row button {
+            color: #64748b; text-decoration: underline; cursor: pointer;
+            background: none; border: none; font-size: 11px;
+        }
     </style>
 </head>
 <body class="min-h-screen text-slate-200 p-4 md:p-6 flex flex-col">
@@ -85,14 +92,18 @@
                 <span id="adminBtnText">Admin Login</span>
             </button>
             <div class="text-xs font-mono">DEVICE ID: <span id="my-device-id" class="text-yellow-400 font-bold text-sm">Not Set</span></div>
-            <div id="alertEmailRow">
+            <div class="email-row">
                 ALERT EMAIL: <span class="email-val" id="my-alert-email">—</span>
-                <button onclick="promptForEmail(true)">edit</button>
+                <button onclick="promptForEmail()">edit</button>
+            </div>
+            <div class="email-row">
+                EMERGENCY: <span class="email-val emg" id="my-emergency-email">—</span>
+                <button onclick="promptForEmergencyEmail()">edit</button>
             </div>
             <div class="text-xs font-mono flex items-center gap-2">
                 STATUS: <span id="my-gps-status" class="text-red-400 font-bold">WAITING...</span>
             </div>
-            <button onclick="triggerPanic()" title="Panic: email my location now"
+            <button onclick="triggerPanic()" title="Panic: email my location to you AND your emergency contact"
                     class="mt-1 text-xs bg-red-600/80 hover:bg-red-500 text-white font-bold px-3 py-1 rounded flex items-center gap-1">
                 <i data-lucide="alert-triangle" class="w-3 h-3"></i> PANIC
             </button>
@@ -103,7 +114,7 @@
         <h2 class="text-lg font-bold text-cyan-400 mb-2 flex items-center gap-2">
             <i data-lucide="user-check" class="w-5 h-5"></i> <span id="setupTitle">Enable GPS Tracking</span>
         </h2>
-        <p class="text-sm text-slate-400 mb-4" id="setupDesc">Enter your name and an alert email. If your phone is stolen or idle, this app will email you its location.</p>
+        <p class="text-sm text-slate-400 mb-4" id="setupDesc">Enter your name and email addresses. If your phone is stolen or you press PANIC, this app will email your location.</p>
         
         <div id="nameInputGroup">
             <label class="block text-xs text-slate-500 uppercase font-bold mb-2">Your Name:</label>
@@ -115,7 +126,14 @@
             <label class="block text-xs text-slate-500 uppercase font-bold mb-2">Your Alert Email (theft alerts):</label>
             <input type="email" id="userEmailInput" placeholder="e.g., yourname@gmail.com" 
                    class="w-full p-3 rounded-lg bg-slate-950 border border-slate-700 text-white mb-4 focus:border-cyan-400 outline-none">
-            <p class="text-xs text-slate-500 mb-4 -mt-2">If your phone is stolen or locked for a long time, we email this address a Google Maps link. <em>Leave blank to use the app owner's email.</em></p>
+            <p class="text-xs text-slate-500 mb-4 -mt-2">If your phone is stolen or locked for a long time, we email this address a Google Maps link.</p>
+        </div>
+
+        <div id="emergencyInputGroup">
+            <label class="block text-xs text-red-400 uppercase font-bold mb-2">Emergency Contact Email (for PANIC):</label>
+            <input type="email" id="userEmergencyEmailInput" placeholder="e.g., parent, spouse, or friend's email" 
+                   class="w-full p-3 rounded-lg bg-slate-950 border border-red-500/60 text-white mb-4 focus:border-red-400 outline-none">
+            <p class="text-xs text-slate-500 mb-4 -mt-2">When you press the PANIC button (or triple-tap your device ID), this email also receives your location — so someone can come to your rescue.</p>
         </div>
         
         <button onclick="startTrackingClick()" 
@@ -190,11 +208,12 @@
             INACTIVITY_MINUTES: 15,
             MOVEMENT_THRESHOLD_M: 20,
             GPS_FAIL_ALERT_SECONDS: 60,
-            THEFT_SUSPICION_MINUTES: 20,   // page hidden >= X min then visible → theft alert
-            THEFT_ALERT_THROTTLE_MS: 60 * 60 * 1000  // max once per hour
+            THEFT_SUSPICION_MINUTES: 20,
+            THEFT_ALERT_THROTTLE_MS: 60 * 60 * 1000
         };
 
         const ADMIN_PASSWORD = "a20carterpilar08B!";
+        const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
         function isAdmin() { return localStorage.getItem('jarvis_admin') === 'true'; }
 
@@ -240,6 +259,7 @@
 
         let myDeviceId = localStorage.getItem('jarvis_tracker_id');
         let myAlertEmail = localStorage.getItem('jarvis_alert_email') || '';
+        let myEmergencyEmail = localStorage.getItem('jarvis_emergency_email') || '';
         let map = null;
         let markers = {};
         let paths = {};
@@ -280,15 +300,18 @@
             }
 
             updateAlertEmailDisplay();
+            updateEmergencyEmailDisplay();
 
             if (myDeviceId) {
                 document.getElementById('my-device-id').innerText = myDeviceId;
                 document.getElementById('nameInputGroup').style.display = 'none';
                 document.getElementById('setupTitle').innerText = "Welcome Back!";
-                document.getElementById('setupDesc').innerText = "Click below to resume. Add or change your alert email if needed.";
+                document.getElementById('setupDesc').innerText = "Click below to resume. Add or change your emails if needed.";
                 document.getElementById('startBtnText').innerText = "📍 Resume Live GPS";
                 if (myAlertEmail) document.getElementById('emailInputGroup').style.display = 'none';
+                if (myEmergencyEmail) document.getElementById('emergencyInputGroup').style.display = 'none';
                 document.getElementById('userEmailInput').value = myAlertEmail;
+                document.getElementById('userEmergencyEmailInput').value = myEmergencyEmail;
             }
             setupPanicTripleTap();
             setInterval(inactivityWatcher, 30000);
@@ -296,35 +319,42 @@
         };
 
         function updateAlertEmailDisplay() {
-            const el = document.getElementById('my-alert-email');
-            el.innerText = myAlertEmail || "(owner default)";
+            document.getElementById('my-alert-email').innerText = myAlertEmail || "(owner default)";
         }
 
-        function promptForEmail(forceReload) {
+        function updateEmergencyEmailDisplay() {
+            document.getElementById('my-emergency-email').innerText = myEmergencyEmail || "(not set)";
+        }
+
+        function promptForEmail() {
             const current = localStorage.getItem('jarvis_alert_email') || '';
-            const email = prompt("Enter the email that should receive theft alerts:", current);
+            const email = prompt("Your alert email (for theft alerts):", current);
             if (email === null) return;
             const trimmed = email.trim();
-            if (trimmed && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
-                alert("That doesn't look like a valid email. Please try again.");
-                return;
-            }
-            if (trimmed) {
-                localStorage.setItem('jarvis_alert_email', trimmed);
-                myAlertEmail = trimmed;
-            } else {
-                localStorage.removeItem('jarvis_alert_email');
-                myAlertEmail = '';
-            }
+            if (trimmed && !EMAIL_RE.test(trimmed)) { alert("Invalid email."); return; }
+            if (trimmed) { localStorage.setItem('jarvis_alert_email', trimmed); myAlertEmail = trimmed; }
+            else { localStorage.removeItem('jarvis_alert_email'); myAlertEmail = ''; }
             updateAlertEmailDisplay();
-            showToast(trimmed ? "✔ Alert email saved" : "✔ Using owner default");
-            if (forceReload) location.reload();
+            showToast(trimmed ? "✔ Alert email saved" : "✔ Alert email cleared");
+        }
+
+        function promptForEmergencyEmail() {
+            const current = localStorage.getItem('jarvis_emergency_email') || '';
+            const email = prompt("Emergency contact email (gets PANIC alerts):", current);
+            if (email === null) return;
+            const trimmed = email.trim();
+            if (trimmed && !EMAIL_RE.test(trimmed)) { alert("Invalid email."); return; }
+            if (trimmed) { localStorage.setItem('jarvis_emergency_email', trimmed); myEmergencyEmail = trimmed; }
+            else { localStorage.removeItem('jarvis_emergency_email'); myEmergencyEmail = ''; }
+            updateEmergencyEmailDisplay();
+            showToast(trimmed ? "✔ Emergency email saved" : "✔ Emergency email cleared");
         }
 
         // ==========================================
         function startTrackingClick() {
             const nameInput = document.getElementById('userNameInput');
             const emailInput = document.getElementById('userEmailInput');
+            const emergencyInput = document.getElementById('userEmergencyEmailInput');
             const errorBox = document.getElementById('errorBox');
 
             if (!myDeviceId) {
@@ -335,16 +365,24 @@
                 document.getElementById('my-device-id').innerText = myDeviceId;
             }
 
-            // Save alert email
             const typedEmail = emailInput.value.trim();
             if (typedEmail) {
-                if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(typedEmail)) {
-                    alert("Please enter a valid email address or leave the field blank.");
-                    return;
+                if (!EMAIL_RE.test(typedEmail)) {
+                    alert("Please enter a valid alert email or leave blank."); return;
                 }
                 localStorage.setItem('jarvis_alert_email', typedEmail);
                 myAlertEmail = typedEmail;
                 updateAlertEmailDisplay();
+            }
+
+            const typedEmergency = emergencyInput.value.trim();
+            if (typedEmergency) {
+                if (!EMAIL_RE.test(typedEmergency)) {
+                    alert("Please enter a valid emergency email or leave blank."); return;
+                }
+                localStorage.setItem('jarvis_emergency_email', typedEmergency);
+                myEmergencyEmail = typedEmergency;
+                updateEmergencyEmailDisplay();
             }
 
             document.getElementById('setupPanel').classList.add('hidden');
@@ -476,9 +514,6 @@
             } catch (err) { console.log("WakeLock not supported"); }
         }
 
-        // ==========================================
-        // 🚨 THEFT-SUSPICION (proxy for forced unlock)
-        // ==========================================
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
                 hiddenAt = Date.now();
@@ -553,7 +588,10 @@ ${mapsUrl}
         }
 
         // ==========================================
-        // 📧 EMAIL — sends to user + owner
+        // 📧 EMAIL — recipients depend on alert type
+        //    - PANIC         → user + emergency + owner
+        //    - THEFT-SUSPICION → user + owner
+        //    - INACTIVE / GPS LOST → user (or owner if no user email)
         // ==========================================
         async function sendLocationEmail(reason) {
             if (!localSelf) { showToast("⚠️ Pa gen pozisyon pou voye"); return false; }
@@ -563,11 +601,20 @@ ${mapsUrl}
             const leafletUrl = `${location.origin}${location.pathname}`;
             const time = new Date().toLocaleString();
 
+            const isPanic    = /PANIC/i.test(reason);
+            const isTheft    = /THEFT/i.test(reason);
+            const isCritical = isPanic || isTheft;
+
+            const panicBanner = isPanic
+                ? "\n⚠️ PANIC — user pressed the panic button. Please respond immediately.\n"
+                : "";
+
             const message =
 `ALERT: ${reason}
-
+${panicBanner}
 Device ID: ${myDeviceId}
-Owner email: ${myAlertEmail || "(not set — using owner default)"}
+User email: ${myAlertEmail || "(not set)"}
+Emergency contact: ${myEmergencyEmail || "(not set)"}
 Time: ${time}
 Latitude: ${lat}
 Longitude: ${lng}
@@ -580,19 +627,18 @@ Live map page:
 ${leafletUrl}
 `;
 
-            // Determine recipients
-            const isCritical = /PANIC|THEFT/i.test(reason);
+            // Build recipient list
             const recipients = new Set();
             if (myAlertEmail) recipients.add(myAlertEmail);
-            if (isCritical || !myAlertEmail) recipients.add(EMAIL_CONFIG.OWNER_EMAIL);
-            // Never double-send if user typed owner's own address
-            recipients.delete(EMAIL_CONFIG.OWNER_EMAIL);
-            if (!myAlertEmail) recipients.add(EMAIL_CONFIG.OWNER_EMAIL);  // ensure at least one
+            if (isPanic && myEmergencyEmail) recipients.add(myEmergencyEmail);
             if (isCritical) recipients.add(EMAIL_CONFIG.OWNER_EMAIL);
+            if (recipients.size === 0) recipients.add(EMAIL_CONFIG.OWNER_EMAIL);
 
-            const subject = `🚨 GPS Alert (${reason}) — ${myDeviceId}`;
+            const subject = isPanic
+                ? `🚨🚨 PANIC — Location of ${myDeviceId}`
+                : `🚨 GPS Alert (${reason}) — ${myDeviceId}`;
+
             let anyOk = false;
-
             for (const to of recipients) {
                 try {
                     const res = await fetch("https://api.web3forms.com/submit", {
@@ -609,7 +655,7 @@ ${leafletUrl}
             }
 
             lastEmailSentAt = Date.now();
-            showToast(anyOk ? "📧 Email sent ✔" : "⚠️ Email failed");
+            showToast(anyOk ? `📧 Sent to ${recipients.size} inbox${recipients.size>1?'es':''} ✔` : "⚠️ Email failed");
             return anyOk;
         }
 
