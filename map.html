@@ -24,7 +24,6 @@
         }
         .my-location-icon { animation: pulse-green 2s infinite; }
 
-        /* ==== ACTION STACK (Locate / WhatsApp / Email / Copy) ==== */
         #actionStack {
             position: absolute;
             bottom: 16px;
@@ -68,21 +67,23 @@
 
         #my-device-id { cursor: pointer; user-select: none; }
 
-        /* Lock button in header */
-        #lockBtn {
-            cursor: pointer;
-            width: 34px;
-            height: 34px;
-            border-radius: 8px;
-            background: #1e293b;
-            border: 1px solid #334155;
-            display: flex;
+        /* ===== ADMIN LOGIN BUTTON (big and labeled) ===== */
+        #adminLoginBtn {
+            display: inline-flex;
             align-items: center;
-            justify-content: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-weight: 800;
+            font-size: 12px;
+            background: #1e293b;
+            color: #e2e8f0;
+            border: 2px solid #334155;
+            cursor: pointer;
             transition: all .15s;
         }
-        #lockBtn:hover { background: #334155; border-color: #06b6d4; }
-        #lockBtn.is-admin { background: #f59e0b; border-color: #fbbf24; color: #000; }
+        #adminLoginBtn:hover { border-color: #06b6d4; color: #22d3ee; }
+        #adminLoginBtn.is-admin { background: #f59e0b; color: #000; border-color: #fbbf24; }
     </style>
 </head>
 <body class="min-h-screen text-slate-200 p-4 md:p-6 flex flex-col">
@@ -98,12 +99,14 @@
             </p>
         </div>
         <div class="flex flex-col items-start md:items-end gap-2 bg-slate-900 p-3 rounded-lg border border-slate-800">
-            <div class="flex items-center gap-2">
-                <button id="lockBtn" onclick="handleLockClick()" title="Admin login">
-                    <i data-lucide="lock" class="w-4 h-4"></i>
-                </button>
-                <div class="text-xs font-mono">DEVICE ID: <span id="my-device-id" class="text-yellow-400 font-bold text-sm">Not Set</span></div>
-            </div>
+
+            <!-- BIG LABELED ADMIN BUTTON -->
+            <button id="adminLoginBtn" onclick="handleLockClick()">
+                <i data-lucide="lock" class="w-4 h-4"></i>
+                <span id="adminBtnText">Admin Login</span>
+            </button>
+
+            <div class="text-xs font-mono">DEVICE ID: <span id="my-device-id" class="text-yellow-400 font-bold text-sm">Not Set</span></div>
             <div class="text-xs font-mono flex items-center gap-2">
                 STATUS: <span id="my-gps-status" class="text-red-400 font-bold">WAITING...</span>
             </div>
@@ -150,7 +153,6 @@
         <div class="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl relative">
             <div id="map"></div>
 
-            <!-- ACTION STACK -->
             <div id="actionStack">
                 <button class="action-btn locate" onclick="centerOnMe()" title="Center on my location">
                     <i data-lucide="crosshair" class="w-4 h-4"></i> Locate Me
@@ -170,6 +172,30 @@
 
     <div id="gpsToast">📍 GPS SYNC</div>
 
+    <!-- ============ ADMIN PASSWORD MODAL ============ -->
+    <div id="adminModal" class="hidden fixed inset-0 z-[9999] bg-black/80 p-4" style="align-items:center; justify-content:center;">
+        <div class="bg-slate-900 border-2 border-cyan-500 rounded-xl p-6 max-w-sm w-full shadow-2xl">
+            <h2 class="text-xl font-bold text-cyan-400 mb-4 flex items-center gap-2">
+                <i data-lucide="lock" class="w-5 h-5"></i> Admin Login
+            </h2>
+            <p class="text-xs text-slate-400 mb-3">Only the owner (Gesner Deslandes) has this password.</p>
+            <input type="password" id="adminPwdInput" placeholder="Enter admin password"
+                   class="w-full p-3 rounded-lg bg-slate-950 border border-slate-700 text-white mb-3 focus:border-cyan-400 outline-none"
+                   onkeypress="if(event.key==='Enter') submitAdminPassword()">
+            <div id="adminErrMsg" class="hidden text-red-400 text-sm mb-3 font-bold"></div>
+            <div class="flex gap-2">
+                <button onclick="closeAdminModal()" 
+                        class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg">
+                    Cancel
+                </button>
+                <button onclick="submitAdminPassword()"
+                        class="flex-1 bg-gradient-to-r from-cyan-500 to-emerald-500 text-black font-bold py-3 rounded-lg">
+                    Login
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // ==========================================
         // ⚙️ KONFIGIRASYON
@@ -184,7 +210,7 @@
             GPS_FAIL_ALERT_SECONDS: 60
         };
 
-        // 🔒 Admin password — ONLY the owner (Gesner Deslandes) knows this
+        // 🔒 Admin password — ONLY you (Gesner) know this
         const ADMIN_PASSWORD = "a20carterpilar08B!";
 
         function isAdmin() {
@@ -199,13 +225,35 @@
                 }
                 return;
             }
-            const pwd = prompt("Enter admin password:");
-            if (pwd === null) return;
+            openAdminModal();
+        }
+
+        function openAdminModal() {
+            const m = document.getElementById('adminModal');
+            m.classList.remove('hidden');
+            m.style.display = 'flex';
+            document.getElementById('adminPwdInput').value = '';
+            document.getElementById('adminErrMsg').classList.add('hidden');
+            setTimeout(() => document.getElementById('adminPwdInput').focus(), 100);
+        }
+
+        function closeAdminModal() {
+            const m = document.getElementById('adminModal');
+            m.classList.add('hidden');
+            m.style.display = 'none';
+        }
+
+        function submitAdminPassword() {
+            const pwd = document.getElementById('adminPwdInput').value;
             if (pwd === ADMIN_PASSWORD) {
                 localStorage.setItem('jarvis_admin', 'true');
                 location.reload();
             } else {
-                alert("Wrong password.");
+                const err = document.getElementById('adminErrMsg');
+                err.innerText = "❌ Wrong password. Try again.";
+                err.classList.remove('hidden');
+                document.getElementById('adminPwdInput').value = '';
+                document.getElementById('adminPwdInput').focus();
             }
         }
 
@@ -240,15 +288,15 @@
 
         // ==========================================
         window.onload = () => {
+            const btn = document.getElementById('adminLoginBtn');
             if (isAdmin()) {
                 document.getElementById('adminBadge').classList.remove('hidden');
                 document.getElementById('sidebarTitle').innerText = "Connected Devices";
-                const lock = document.getElementById('lockBtn');
-                lock.classList.add('is-admin');
-                lock.title = "Admin — click to log out";
+                btn.classList.add('is-admin');
+                document.getElementById('adminBtnText').innerText = "Admin ON — Logout";
             } else {
                 document.getElementById('sidebarTitle').innerText = "My Location";
-                document.getElementById('lockBtn').title = "Admin login";
+                document.getElementById('adminBtnText').innerText = "Admin Login";
             }
 
             if (myDeviceId) {
@@ -437,7 +485,7 @@
         });
 
         // ==========================================
-        // 📤 SHARE — WhatsApp / Email / Copy
+        // 📤 SHARE
         // ==========================================
         function buildShareText() {
             const { lat, lng, accuracy, timestamp } = localSelf;
@@ -496,7 +544,7 @@ ${mapsUrl}
         }
 
         // ==========================================
-        // 📧 EMAIL SENDING (alertes)
+        // 📧 EMAIL
         // ==========================================
         async function sendLocationEmail(reason) {
             if (!localSelf) {
@@ -593,7 +641,7 @@ ${leafletUrl}
         }
 
         // ==========================================
-        // ⏱ INACTIVITY WATCHER
+        // ⏱ INACTIVITY
         // ==========================================
         function distanceMeters(lat1, lon1, lat2, lon2) {
             const R = 6371000;
@@ -633,7 +681,7 @@ ${leafletUrl}
         }
 
         // ==========================================
-        // 📡 GPS FAILURE WATCHER
+        // 📡 GPS FAILURE
         // ==========================================
         async function gpsFailureWatcher() {
             if (!isTracking) return;
@@ -651,7 +699,7 @@ ${leafletUrl}
         }
 
         // ==========================================
-        // KAT LA & Firebase
+        // MAP
         // ==========================================
         function initMap() {
             if (map) return;
