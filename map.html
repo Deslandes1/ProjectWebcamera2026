@@ -24,7 +24,6 @@
         }
         .my-location-icon { animation: pulse-green 2s infinite; }
 
-        /* Bouton Locate Me */
         #locateMeBtn {
             position: absolute; bottom: 16px; right: 16px; z-index: 1001;
             width: 48px; height: 48px; border-radius: 50%;
@@ -37,7 +36,6 @@
         #locateMeBtn:hover { transform: scale(1.08); }
         #locateMeBtn:active { transform: scale(0.95); }
 
-        /* Ti badj ki parèt lè w touche ekran an */
         #gpsToast {
             position: fixed; bottom: 20px; left: 20px; z-index: 9999;
             background: #00ff9d; color: #04121a; font-weight: 800; font-size: 13px;
@@ -46,6 +44,8 @@
             transition: opacity .2s ease, transform .2s ease;
         }
         #gpsToast.show { opacity: 1; transform: translateY(0); }
+
+        #my-device-id { cursor: pointer; user-select: none; }
     </style>
 </head>
 <body class="min-h-screen text-slate-200 p-4 md:p-6 flex flex-col">
@@ -64,10 +64,13 @@
             <div class="text-xs font-mono flex items-center gap-2">
                 STATUS: <span id="my-gps-status" class="text-red-400 font-bold">WAITING...</span>
             </div>
+            <button onclick="triggerPanic()" title="Panic: email my location now"
+                    class="mt-1 text-xs bg-red-600/80 hover:bg-red-500 text-white font-bold px-3 py-1 rounded flex items-center gap-1">
+                <i data-lucide="alert-triangle" class="w-3 h-3"></i> PANIC
+            </button>
         </div>
     </header>
 
-    <!-- PÒT ANTRÈ (SI SE PREMYE FWA) -->
     <div id="setupPanel" class="max-w-xl w-full mx-auto mb-6 bg-slate-900 border border-cyan-500/50 rounded-xl p-6 shadow-2xl">
         <h2 class="text-lg font-bold text-cyan-400 mb-2 flex items-center gap-2">
             <i data-lucide="user-check" class="w-5 h-5"></i> <span id="setupTitle">Enable GPS Tracking</span>
@@ -91,7 +94,6 @@
         </div>
     </div>
 
-    <!-- KAT LA -->
     <div id="mapContent" class="hidden grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 h-[calc(100vh-180px)]">
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 overflow-y-auto">
             <h2 class="text-sm font-semibold tracking-wide text-slate-300 uppercase mb-4 flex items-center gap-2">
@@ -104,18 +106,28 @@
 
         <div class="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl relative">
             <div id="map"></div>
-            <!-- BOUTON LOCATE ME -->
             <button id="locateMeBtn" onclick="centerOnMe()" title="Center on my location">
                 <i data-lucide="crosshair" class="w-6 h-6"></i>
             </button>
         </div>
     </div>
 
-    <!-- TOAST: parèt chak fwa w touche ekran an -->
     <div id="gpsToast">📍 GPS SYNC</div>
 
     <script>
+        // ==========================================
+        // ⚙️ KONFIGIRASYON
+        // ==========================================
         const FIREBASE_URL = "https://jarvis-tracker-a8136-default-rtdb.firebaseio.com";
+
+        const EMAIL_CONFIG = {
+            WEB3FORMS_KEY: "6492447a-cc07-4d63-bb35-28f9f6db2602",
+            TO_EMAIL: "deslandes78@gmail.com",
+            INACTIVITY_MINUTES: 15,
+            MOVEMENT_THRESHOLD_M: 20,
+            GPS_FAIL_ALERT_SECONDS: 60
+        };
+
         lucide.createIcons();
 
         let myDeviceId = localStorage.getItem('jarvis_tracker_id');
@@ -124,14 +136,12 @@
         let paths = {};
         let isTracking = false;
 
-        // ==== NOUVO: lokal self tracking (endepandan de Firebase) ====
-        let localSelf = null;          // { lat, lng, accuracy, timestamp }
+        let localSelf = null;
         let myMarker = null;
         let myAccuracyCircle = null;
         let myPath = null;
         let mapCenteredOnSelf = false;
 
-        // ==== GPS / touch jesyon ====
         let watchId = null;
         let lastFixTime = 0;
         let lastTouchSync = 0;
@@ -139,8 +149,12 @@
         const WATCH_STALE_MS = 15000;
         const GPS_OPTIONS = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
 
-        // ==========================================
-        // 1. CHECKE SI YON MOUN TE DEJA KONEKTE
+        let lastMovementTime = Date.now();
+        let lastPosForMove = null;
+        let inactivityAlertSent = false;
+        let gpsFailAlertSent = false;
+        let lastEmailSentAt = 0;
+
         // ==========================================
         window.onload = () => {
             if (myDeviceId) {
@@ -150,10 +164,13 @@
                 document.getElementById('setupDesc').innerText = "Click the button below to resume sharing your location.";
                 document.getElementById('startBtnText').innerText = "📍 Resume Live GPS";
             }
+            setupPanicTripleTap();
+            setInterval(inactivityWatcher, 30000);
+            setInterval(gpsFailureWatcher, 15000);
         };
 
         // ==========================================
-        // 2. KÒMANSE SWIVI GPS
+        // GPS start
         // ==========================================
         function startTrackingClick() {
             const nameInput = document.getElementById('userNameInput');
@@ -178,15 +195,13 @@
             requestWakeLock();
             isTracking = true;
             lastTouchSync = Date.now();
+            lastMovementTime = Date.now();
             setGpsStatus("REQUESTING GPS...", "text-yellow-400");
 
             startWatch();
             initMap();
         }
 
-        // ==========================================
-        // 3. ZOUTI GPS
-        // ==========================================
         function setGpsStatus(text, colorClass) {
             const el = document.getElementById('my-gps-status');
             el.innerText = text;
@@ -195,15 +210,16 @@
 
         function onGpsSuccess(position) {
             lastFixTime = Date.now();
+            gpsFailAlertSent = false;
+
             const lat = position.coords.latitude;
             const lng = position.coords.longitude;
             const accuracy = position.coords.accuracy;
 
-            // 1) Mete ajou pozisyon pa w IMEDYATMAN sou kat la
             localSelf = { lat, lng, accuracy, timestamp: Date.now() };
             updateMyLocationOnMap();
+            checkMovement(lat, lng);
 
-            // 2) Voye bay Firebase pou lòt moun
             setGpsStatus(`LIVE (${Math.round(accuracy)}m)`, "text-emerald-400");
             pushToFirebase(lat, lng, accuracy);
         }
@@ -237,9 +253,6 @@
             watchId = navigator.geolocation.watchPosition(onGpsSuccess, onGpsError, GPS_OPTIONS);
         }
 
-        // ==========================================
-        // 4. AFICHE POZISYON PA W SOU KAT LA (NOUVO)
-        // ==========================================
         function updateMyLocationOnMap() {
             if (!map || !localSelf) return;
             const { lat, lng, accuracy } = localSelf;
@@ -248,13 +261,10 @@
             if (!myMarker) {
                 myMarker = L.marker([lat, lng], { icon: myIcon, zIndexOffset: 2000 }).addTo(map);
                 myMarker.bindPopup('<b>Your Location</b>');
-
                 myAccuracyCircle = L.circle([lat, lng], {
-                    radius: acc,
-                    color: '#00ff9d', weight: 1,
+                    radius: acc, color: '#00ff9d', weight: 1,
                     fillColor: '#00ff9d', fillOpacity: 0.10
                 }).addTo(map);
-
                 myPath = L.polyline([[lat, lng]], {
                     color: '#00ff9d', weight: 3, opacity: 0.55
                 }).addTo(map);
@@ -264,14 +274,12 @@
                 myPath.addLatLng([lat, lng]);
             }
 
-            // Santre kat la sou ou premye fwa GPS la reponn
             if (!mapCenteredOnSelf) {
                 map.setView([lat, lng], 16);
                 mapCenteredOnSelf = true;
             }
         }
 
-        // Bouton "Locate Me"
         function centerOnMe() {
             if (!map) return;
             if (localSelf) {
@@ -282,9 +290,6 @@
             }
         }
 
-        // ==========================================
-        // 5. TOUCH EKRAN = GPS RAFRAICHI
-        // ==========================================
         function forceGpsUpdate(bypassThrottle = false) {
             if (!isTracking) return;
             const now = Date.now();
@@ -292,25 +297,25 @@
             lastTouchSync = now;
 
             setGpsStatus("SYNCING...", "text-yellow-400");
-            showToast();
+            showToast("📍 GPS SYNC");
 
             if (watchId === null || (now - lastFixTime) > WATCH_STALE_MS) {
                 startWatch();
             }
 
             navigator.geolocation.getCurrentPosition(
-                onGpsSuccess,
-                () => {},
+                onGpsSuccess, () => {},
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
         }
 
         let toastTimer = null;
-        function showToast() {
+        function showToast(text = "📍 GPS SYNC") {
             const toast = document.getElementById('gpsToast');
+            toast.innerText = text;
             toast.classList.add('show');
             clearTimeout(toastTimer);
-            toastTimer = setTimeout(() => toast.classList.remove('show'), 1200);
+            toastTimer = setTimeout(() => toast.classList.remove('show'), 1500);
         }
 
         function attachTouchListeners() {
@@ -321,14 +326,11 @@
         }
         attachTouchListeners();
 
-        // ==========================================
-        // 6. WAKE LOCK
-        // ==========================================
         let wakeLock = null;
         async function requestWakeLock() {
-            try { 
+            try {
                 if ('wakeLock' in navigator) {
-                    wakeLock = await navigator.wakeLock.request('screen'); 
+                    wakeLock = await navigator.wakeLock.request('screen');
                 }
             } catch (err) { console.log("WakeLock not supported"); }
         }
@@ -341,11 +343,166 @@
         });
 
         // ==========================================
-        // 7. KAT LA & FIREBASE (lòt moun)
+        // 📧 EMAIL SENDING
+        // ==========================================
+        async function sendLocationEmail(reason) {
+            if (!localSelf) {
+                showToast("⚠️ Pa gen pozisyon pou voye");
+                return false;
+            }
+            if (!EMAIL_CONFIG.WEB3FORMS_KEY || EMAIL_CONFIG.WEB3FORMS_KEY.includes("PASTE_")) {
+                showToast("⚠️ Mete WEB3FORMS_KEY anvan");
+                return false;
+            }
+
+            const { lat, lng, accuracy } = localSelf;
+            const mapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
+            const leafletUrl = `${location.origin}${location.pathname}`;
+            const time = new Date().toLocaleString();
+
+            const message =
+`ALERT: ${reason}
+
+Device ID: ${myDeviceId}
+Time: ${time}
+Latitude: ${lat}
+Longitude: ${lng}
+Accuracy: ±${Math.round(accuracy)}m
+
+Open in Google Maps:
+${mapsUrl}
+
+Live map page:
+${leafletUrl}
+`;
+
+            try {
+                const res = await fetch("https://api.web3forms.com/submit", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        access_key: EMAIL_CONFIG.WEB3FORMS_KEY,
+                        subject: `🚨 GPS Alert (${reason}) — ${myDeviceId}`,
+                        email: EMAIL_CONFIG.TO_EMAIL,
+                        message: message
+                    })
+                });
+                const json = await res.json();
+                const ok = !!(json && json.success);
+                lastEmailSentAt = Date.now();
+                showToast(ok ? "📧 Email sent ✔" : "⚠️ Email failed");
+                return ok;
+            } catch (e) {
+                showToast("⚠️ Email network err");
+                return false;
+            }
+        }
+
+        // ==========================================
+        // 🚨 PANIC — manyèl + silent triple-tap
+        // ==========================================
+        async function triggerPanic() {
+            showToast("🚨 PANIC — sending...");
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    async (pos) => {
+                        localSelf = {
+                            lat: pos.coords.latitude,
+                            lng: pos.coords.longitude,
+                            accuracy: pos.coords.accuracy,
+                            timestamp: Date.now()
+                        };
+                        updateMyLocationOnMap();
+                        await sendLocationEmail("MANUAL PANIC");
+                    },
+                    async () => {
+                        await sendLocationEmail("MANUAL PANIC (last known)");
+                    },
+                    { enableHighAccuracy: true, timeout: 8000 }
+                );
+            } else {
+                await sendLocationEmail("MANUAL PANIC (last known)");
+            }
+        }
+
+        let tapCount = 0, tapTimer = null;
+        function setupPanicTripleTap() {
+            const el = document.getElementById('my-device-id');
+            el.addEventListener('click', () => {
+                tapCount++;
+                clearTimeout(tapTimer);
+                tapTimer = setTimeout(() => (tapCount = 0), 800);
+                if (tapCount >= 3) {
+                    tapCount = 0;
+                    triggerPanic();
+                }
+            });
+        }
+
+        // ==========================================
+        // ⏱ INACTIVITY WATCHER
+        // ==========================================
+        function distanceMeters(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
+            const toRad = d => (d * Math.PI) / 180;
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) ** 2 +
+                      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                      Math.sin(dLon / 2) ** 2;
+            return 2 * R * Math.asin(Math.sqrt(a));
+        }
+
+        function checkMovement(lat, lng) {
+            if (!lastPosForMove) {
+                lastPosForMove = { lat, lng };
+                lastMovementTime = Date.now();
+                return;
+            }
+            const d = distanceMeters(lastPosForMove.lat, lastPosForMove.lng, lat, lng);
+            if (d > EMAIL_CONFIG.MOVEMENT_THRESHOLD_M) {
+                lastPosForMove = { lat, lng };
+                lastMovementTime = Date.now();
+                inactivityAlertSent = false;
+            }
+        }
+
+        async function inactivityWatcher() {
+            if (!isTracking || !localSelf) return;
+            const idleMs = Date.now() - lastMovementTime;
+            const limitMs = EMAIL_CONFIG.INACTIVITY_MINUTES * 60000;
+            if (idleMs > limitMs && !inactivityAlertSent) {
+                inactivityAlertSent = true;
+                await sendLocationEmail(
+                    `Inactive ${Math.round(idleMs / 60000)} min — phone may be idle or locked`
+                );
+            }
+        }
+
+        // ==========================================
+        // 📡 GPS FAILURE WATCHER
+        // ==========================================
+        async function gpsFailureWatcher() {
+            if (!isTracking) return;
+            const sinceLastFix = Date.now() - lastFixTime;
+            if (lastFixTime > 0 &&
+                sinceLastFix > EMAIL_CONFIG.GPS_FAIL_ALERT_SECONDS * 1000 &&
+                !gpsFailAlertSent) {
+                gpsFailAlertSent = true;
+                setGpsStatus("GPS LOST", "text-red-400");
+                await sendLocationEmail(
+                    `GPS signal lost for ${Math.round(sinceLastFix / 1000)}s`
+                );
+                startWatch();
+            }
+        }
+
+        // ==========================================
+        // KAT LA & Firebase (lòt moun)
         // ==========================================
         function initMap() {
-            if (map) return; 
-            map = L.map('map').setView([18.5392, -72.3364], 13); 
+            if (map) return;
+            map = L.map('map').setView([18.5392, -72.3364], 13);
             L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
             }).addTo(map);
@@ -368,7 +525,6 @@
         async function fetchAllTrackers() {
             let listHTML = '';
 
-            // ---- 1) KAT PA W (soti nan GPS lokal la, toujou an premye) ----
             if (localSelf) {
                 const sTime = new Date(localSelf.timestamp).toLocaleTimeString();
                 const sAcc = Math.round(localSelf.accuracy || 0);
@@ -389,14 +545,13 @@
                 `;
             }
 
-            // ---- 2) LÒT APARÈY YO (soti nan Firebase) ----
             try {
                 const response = await fetch(`${FIREBASE_URL}/trackers.json`);
                 const data = await response.json();
 
                 if (data) {
                     for (const [id, tracker] of Object.entries(data)) {
-                        if (id === myDeviceId) continue;                 // pa doub-poze tèt ou
+                        if (id === myDeviceId) continue;
                         if (!tracker.lat || !tracker.lng) continue;
 
                         const lat = tracker.lat;
@@ -436,12 +591,9 @@
                     }
                 }
 
-                if (!listHTML) {
-                    listHTML = '<p class="text-slate-500 text-sm">Pa gen lòt aparèy ki konekte.</p>';
-                }
+                if (!listHTML) listHTML = '<p class="text-slate-500 text-sm">Pa gen lòt aparèy ki konekte.</p>';
                 document.getElementById('student-list').innerHTML = listHTML;
             } catch (error) {
-                // Menm si Firebase pa reponn, pozisyon pa w rete sou kat la
                 if (!listHTML) listHTML = '<p class="text-slate-500 text-sm">Pa gen koneksyon rezo.</p>';
                 document.getElementById('student-list').innerHTML = listHTML;
                 console.error("Erè koneksyon Firebase:", error);
