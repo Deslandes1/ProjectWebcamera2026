@@ -25,29 +25,15 @@
         .my-location-icon { animation: pulse-green 2s infinite; }
 
         #actionStack {
-            position: absolute;
-            bottom: 16px;
-            right: 16px;
-            z-index: 1200;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            align-items: flex-end;
+            position: absolute; bottom: 16px; right: 16px; z-index: 1200;
+            display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
         }
         .action-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 16px;
-            border-radius: 999px;
-            font-weight: 800;
-            font-size: 13px;
-            color: #ffffff;
-            border: 2px solid #ffffff;
-            box-shadow: 0 4px 14px rgba(0,0,0,.4);
-            cursor: pointer;
-            transition: transform .15s ease;
-            white-space: nowrap;
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 10px 16px; border-radius: 999px; font-weight: 800; font-size: 13px;
+            color: #ffffff; border: 2px solid #ffffff;
+            box-shadow: 0 4px 14px rgba(0,0,0,.4); cursor: pointer;
+            transition: transform .15s ease; white-space: nowrap;
         }
         .action-btn:hover { transform: scale(1.05); }
         .action-btn:active { transform: scale(0.95); }
@@ -67,23 +53,18 @@
 
         #my-device-id { cursor: pointer; user-select: none; }
 
-        /* ===== ADMIN LOGIN BUTTON (big and labeled) ===== */
         #adminLoginBtn {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 14px;
-            border-radius: 8px;
-            font-weight: 800;
-            font-size: 12px;
-            background: #1e293b;
-            color: #e2e8f0;
-            border: 2px solid #334155;
-            cursor: pointer;
-            transition: all .15s;
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 14px; border-radius: 8px; font-weight: 800; font-size: 12px;
+            background: #1e293b; color: #e2e8f0; border: 2px solid #334155;
+            cursor: pointer; transition: all .15s;
         }
         #adminLoginBtn:hover { border-color: #06b6d4; color: #22d3ee; }
         #adminLoginBtn.is-admin { background: #f59e0b; color: #000; border-color: #fbbf24; }
+
+        #alertEmailRow { display: flex; align-items: center; gap: 6px; font-size: 11px; font-family: monospace; color: #94a3b8; }
+        #alertEmailRow .email-val { color: #22d3ee; font-weight: 700; }
+        #alertEmailRow button { color: #64748b; text-decoration: underline; cursor: pointer; background: none; border: none; font-size: 11px; }
     </style>
 </head>
 <body class="min-h-screen text-slate-200 p-4 md:p-6 flex flex-col">
@@ -99,14 +80,15 @@
             </p>
         </div>
         <div class="flex flex-col items-start md:items-end gap-2 bg-slate-900 p-3 rounded-lg border border-slate-800">
-
-            <!-- BIG LABELED ADMIN BUTTON -->
             <button id="adminLoginBtn" onclick="handleLockClick()">
                 <i data-lucide="lock" class="w-4 h-4"></i>
                 <span id="adminBtnText">Admin Login</span>
             </button>
-
             <div class="text-xs font-mono">DEVICE ID: <span id="my-device-id" class="text-yellow-400 font-bold text-sm">Not Set</span></div>
+            <div id="alertEmailRow">
+                ALERT EMAIL: <span class="email-val" id="my-alert-email">—</span>
+                <button onclick="promptForEmail(true)">edit</button>
+            </div>
             <div class="text-xs font-mono flex items-center gap-2">
                 STATUS: <span id="my-gps-status" class="text-red-400 font-bold">WAITING...</span>
             </div>
@@ -121,12 +103,19 @@
         <h2 class="text-lg font-bold text-cyan-400 mb-2 flex items-center gap-2">
             <i data-lucide="user-check" class="w-5 h-5"></i> <span id="setupTitle">Enable GPS Tracking</span>
         </h2>
-        <p class="text-sm text-slate-400 mb-4" id="setupDesc">Please enter your name and click the button below to share your live location.</p>
+        <p class="text-sm text-slate-400 mb-4" id="setupDesc">Enter your name and an alert email. If your phone is stolen or idle, this app will email you its location.</p>
         
         <div id="nameInputGroup">
             <label class="block text-xs text-slate-500 uppercase font-bold mb-2">Your Name:</label>
             <input type="text" id="userNameInput" placeholder="e.g., Gesner or Student 1" 
                    class="w-full p-3 rounded-lg bg-slate-950 border border-slate-700 text-white mb-4 focus:border-cyan-400 outline-none">
+        </div>
+
+        <div id="emailInputGroup">
+            <label class="block text-xs text-slate-500 uppercase font-bold mb-2">Your Alert Email (theft alerts):</label>
+            <input type="email" id="userEmailInput" placeholder="e.g., yourname@gmail.com" 
+                   class="w-full p-3 rounded-lg bg-slate-950 border border-slate-700 text-white mb-4 focus:border-cyan-400 outline-none">
+            <p class="text-xs text-slate-500 mb-4 -mt-2">If your phone is stolen or locked for a long time, we email this address a Google Maps link. <em>Leave blank to use the app owner's email.</em></p>
         </div>
         
         <button onclick="startTrackingClick()" 
@@ -152,7 +141,6 @@
 
         <div class="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl relative">
             <div id="map"></div>
-
             <div id="actionStack">
                 <button class="action-btn locate" onclick="centerOnMe()" title="Center on my location">
                     <i data-lucide="crosshair" class="w-4 h-4"></i> Locate Me
@@ -172,7 +160,7 @@
 
     <div id="gpsToast">📍 GPS SYNC</div>
 
-    <!-- ============ ADMIN PASSWORD MODAL ============ -->
+    <!-- ADMIN PASSWORD MODAL -->
     <div id="adminModal" class="hidden fixed inset-0 z-[9999] bg-black/80 p-4" style="align-items:center; justify-content:center;">
         <div class="bg-slate-900 border-2 border-cyan-500 rounded-xl p-6 max-w-sm w-full shadow-2xl">
             <h2 class="text-xl font-bold text-cyan-400 mb-4 flex items-center gap-2">
@@ -184,14 +172,8 @@
                    onkeypress="if(event.key==='Enter') submitAdminPassword()">
             <div id="adminErrMsg" class="hidden text-red-400 text-sm mb-3 font-bold"></div>
             <div class="flex gap-2">
-                <button onclick="closeAdminModal()" 
-                        class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg">
-                    Cancel
-                </button>
-                <button onclick="submitAdminPassword()"
-                        class="flex-1 bg-gradient-to-r from-cyan-500 to-emerald-500 text-black font-bold py-3 rounded-lg">
-                    Login
-                </button>
+                <button onclick="closeAdminModal()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg">Cancel</button>
+                <button onclick="submitAdminPassword()" class="flex-1 bg-gradient-to-r from-cyan-500 to-emerald-500 text-black font-bold py-3 rounded-lg">Login</button>
             </div>
         </div>
     </div>
@@ -204,18 +186,17 @@
 
         const EMAIL_CONFIG = {
             WEB3FORMS_KEY: "6492447a-cc07-4d63-bb35-28f9f6db2602",
-            TO_EMAIL: "deslandes78@gmail.com",
+            OWNER_EMAIL: "deslandes78@gmail.com",
             INACTIVITY_MINUTES: 15,
             MOVEMENT_THRESHOLD_M: 20,
-            GPS_FAIL_ALERT_SECONDS: 60
+            GPS_FAIL_ALERT_SECONDS: 60,
+            THEFT_SUSPICION_MINUTES: 20,   // page hidden >= X min then visible → theft alert
+            THEFT_ALERT_THROTTLE_MS: 60 * 60 * 1000  // max once per hour
         };
 
-        // 🔒 Admin password — ONLY you (Gesner) know this
         const ADMIN_PASSWORD = "a20carterpilar08B!";
 
-        function isAdmin() {
-            return localStorage.getItem('jarvis_admin') === 'true';
-        }
+        function isAdmin() { return localStorage.getItem('jarvis_admin') === 'true'; }
 
         function handleLockClick() {
             if (isAdmin()) {
@@ -230,8 +211,7 @@
 
         function openAdminModal() {
             const m = document.getElementById('adminModal');
-            m.classList.remove('hidden');
-            m.style.display = 'flex';
+            m.classList.remove('hidden'); m.style.display = 'flex';
             document.getElementById('adminPwdInput').value = '';
             document.getElementById('adminErrMsg').classList.add('hidden');
             setTimeout(() => document.getElementById('adminPwdInput').focus(), 100);
@@ -239,8 +219,7 @@
 
         function closeAdminModal() {
             const m = document.getElementById('adminModal');
-            m.classList.add('hidden');
-            m.style.display = 'none';
+            m.classList.add('hidden'); m.style.display = 'none';
         }
 
         function submitAdminPassword() {
@@ -260,6 +239,7 @@
         lucide.createIcons();
 
         let myDeviceId = localStorage.getItem('jarvis_tracker_id');
+        let myAlertEmail = localStorage.getItem('jarvis_alert_email') || '';
         let map = null;
         let markers = {};
         let paths = {};
@@ -283,8 +263,8 @@
         let inactivityAlertSent = false;
         let gpsFailAlertSent = false;
         let lastEmailSentAt = 0;
-
-        let adminRefreshTimer = null;
+        let lastTheftAlertAt = 0;
+        let hiddenAt = null;
 
         // ==========================================
         window.onload = () => {
@@ -299,23 +279,52 @@
                 document.getElementById('adminBtnText').innerText = "Admin Login";
             }
 
+            updateAlertEmailDisplay();
+
             if (myDeviceId) {
                 document.getElementById('my-device-id').innerText = myDeviceId;
                 document.getElementById('nameInputGroup').style.display = 'none';
                 document.getElementById('setupTitle').innerText = "Welcome Back!";
-                document.getElementById('setupDesc').innerText = "Click the button below to resume sharing your location.";
+                document.getElementById('setupDesc').innerText = "Click below to resume. Add or change your alert email if needed.";
                 document.getElementById('startBtnText').innerText = "📍 Resume Live GPS";
+                if (myAlertEmail) document.getElementById('emailInputGroup').style.display = 'none';
+                document.getElementById('userEmailInput').value = myAlertEmail;
             }
             setupPanicTripleTap();
             setInterval(inactivityWatcher, 30000);
             setInterval(gpsFailureWatcher, 15000);
         };
 
-        // ==========================================
-        // GPS start
+        function updateAlertEmailDisplay() {
+            const el = document.getElementById('my-alert-email');
+            el.innerText = myAlertEmail || "(owner default)";
+        }
+
+        function promptForEmail(forceReload) {
+            const current = localStorage.getItem('jarvis_alert_email') || '';
+            const email = prompt("Enter the email that should receive theft alerts:", current);
+            if (email === null) return;
+            const trimmed = email.trim();
+            if (trimmed && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+                alert("That doesn't look like a valid email. Please try again.");
+                return;
+            }
+            if (trimmed) {
+                localStorage.setItem('jarvis_alert_email', trimmed);
+                myAlertEmail = trimmed;
+            } else {
+                localStorage.removeItem('jarvis_alert_email');
+                myAlertEmail = '';
+            }
+            updateAlertEmailDisplay();
+            showToast(trimmed ? "✔ Alert email saved" : "✔ Using owner default");
+            if (forceReload) location.reload();
+        }
+
         // ==========================================
         function startTrackingClick() {
             const nameInput = document.getElementById('userNameInput');
+            const emailInput = document.getElementById('userEmailInput');
             const errorBox = document.getElementById('errorBox');
 
             if (!myDeviceId) {
@@ -326,9 +335,21 @@
                 document.getElementById('my-device-id').innerText = myDeviceId;
             }
 
+            // Save alert email
+            const typedEmail = emailInput.value.trim();
+            if (typedEmail) {
+                if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(typedEmail)) {
+                    alert("Please enter a valid email address or leave the field blank.");
+                    return;
+                }
+                localStorage.setItem('jarvis_alert_email', typedEmail);
+                myAlertEmail = typedEmail;
+                updateAlertEmailDisplay();
+            }
+
             document.getElementById('setupPanel').classList.add('hidden');
             document.getElementById('mapContent').classList.remove('hidden');
-            
+
             if (!navigator.geolocation) {
                 setGpsStatus("NOT SUPPORTED", "text-red-400");
                 return;
@@ -381,17 +402,12 @@
                         timestamp: Date.now(), status: "ONLINE" 
                     })
                 });
-            } catch (e) {
-                setGpsStatus("NETWORK ERR", "text-red-400");
-            }
+            } catch (e) { setGpsStatus("NETWORK ERR", "text-red-400"); }
         }
 
         function startWatch() {
             if (!navigator.geolocation) return;
-            if (watchId !== null) {
-                navigator.geolocation.clearWatch(watchId);
-                watchId = null;
-            }
+            if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
             watchId = navigator.geolocation.watchPosition(onGpsSuccess, onGpsError, GPS_OPTIONS);
         }
 
@@ -407,19 +423,13 @@
                     radius: acc, color: '#00ff9d', weight: 1,
                     fillColor: '#00ff9d', fillOpacity: 0.10
                 }).addTo(map);
-                myPath = L.polyline([[lat, lng]], {
-                    color: '#00ff9d', weight: 3, opacity: 0.55
-                }).addTo(map);
+                myPath = L.polyline([[lat, lng]], { color: '#00ff9d', weight: 3, opacity: 0.55 }).addTo(map);
             } else {
                 myMarker.setLatLng([lat, lng]);
                 myAccuracyCircle.setLatLng([lat, lng]).setRadius(acc);
                 myPath.addLatLng([lat, lng]);
             }
-
-            if (!mapCenteredOnSelf) {
-                map.setView([lat, lng], 16);
-                mapCenteredOnSelf = true;
-            }
+            if (!mapCenteredOnSelf) { map.setView([lat, lng], 16); mapCenteredOnSelf = true; }
         }
 
         function centerOnMe() {
@@ -427,9 +437,7 @@
             if (localSelf) {
                 map.setView([localSelf.lat, localSelf.lng], 17);
                 if (myMarker) myMarker.openPopup();
-            } else {
-                forceGpsUpdate(true);
-            }
+            } else { forceGpsUpdate(true); }
         }
 
         function forceGpsUpdate(bypassThrottle = false) {
@@ -437,18 +445,11 @@
             const now = Date.now();
             if (!bypassThrottle && (now - lastTouchSync) < TOUCH_SYNC_INTERVAL) return;
             lastTouchSync = now;
-
             setGpsStatus("SYNCING...", "text-yellow-400");
             showToast("📍 GPS SYNC");
-
-            if (watchId === null || (now - lastFixTime) > WATCH_STALE_MS) {
-                startWatch();
-            }
-
-            navigator.geolocation.getCurrentPosition(
-                onGpsSuccess, () => {},
-                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-            );
+            if (watchId === null || (now - lastFixTime) > WATCH_STALE_MS) startWatch();
+            navigator.geolocation.getCurrentPosition(onGpsSuccess, () => {},
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
         }
 
         let toastTimer = null;
@@ -471,16 +472,31 @@
         let wakeLock = null;
         async function requestWakeLock() {
             try {
-                if ('wakeLock' in navigator) {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                }
+                if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
             } catch (err) { console.log("WakeLock not supported"); }
         }
 
+        // ==========================================
+        // 🚨 THEFT-SUSPICION (proxy for forced unlock)
+        // ==========================================
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible' && isTracking) {
-                requestWakeLock();
-                forceGpsUpdate(true);
+            if (document.visibilityState === 'hidden') {
+                hiddenAt = Date.now();
+            } else if (document.visibilityState === 'visible') {
+                if (isTracking && hiddenAt) {
+                    const awayMin = (Date.now() - hiddenAt) / 60000;
+                    if (awayMin >= EMAIL_CONFIG.THEFT_SUSPICION_MINUTES) {
+                        const now = Date.now();
+                        if (now - lastTheftAlertAt > EMAIL_CONFIG.THEFT_ALERT_THROTTLE_MS) {
+                            lastTheftAlertAt = now;
+                            sendLocationEmail(
+                                `THEFT-SUSPICION — page was locked/away for ${Math.round(awayMin)} min. If this was you, ignore this message.`
+                            );
+                        }
+                    }
+                }
+                hiddenAt = null;
+                if (isTracking) { requestWakeLock(); forceGpsUpdate(true); }
             }
         });
 
@@ -508,8 +524,7 @@ ${mapsUrl}
 
         function shareWhatsApp() {
             if (!localSelf) { showToast("⏳ GPS pa pare"); return; }
-            const text = encodeURIComponent(buildShareText());
-            window.open(`https://wa.me/?text=${text}`, '_blank');
+            window.open(`https://wa.me/?text=${encodeURIComponent(buildShareText())}`, '_blank');
             showToast("📱 WhatsApp ap louvri...");
         }
 
@@ -529,32 +544,19 @@ ${mapsUrl}
                     await navigator.clipboard.writeText(text);
                 } else {
                     const ta = document.createElement('textarea');
-                    ta.value = text;
-                    ta.style.position = 'fixed';
-                    ta.style.opacity = '0';
-                    document.body.appendChild(ta);
-                    ta.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(ta);
+                    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                    document.body.appendChild(ta); ta.select();
+                    document.execCommand('copy'); document.body.removeChild(ta);
                 }
                 showToast("📋 Copied!");
-            } catch (e) {
-                showToast("⚠️ Copy failed");
-            }
+            } catch (e) { showToast("⚠️ Copy failed"); }
         }
 
         // ==========================================
-        // 📧 EMAIL
+        // 📧 EMAIL — sends to user + owner
         // ==========================================
         async function sendLocationEmail(reason) {
-            if (!localSelf) {
-                showToast("⚠️ Pa gen pozisyon pou voye");
-                return false;
-            }
-            if (!EMAIL_CONFIG.WEB3FORMS_KEY || EMAIL_CONFIG.WEB3FORMS_KEY.includes("PASTE_")) {
-                showToast("⚠️ Mete WEB3FORMS_KEY anvan");
-                return false;
-            }
+            if (!localSelf) { showToast("⚠️ Pa gen pozisyon pou voye"); return false; }
 
             const { lat, lng, accuracy } = localSelf;
             const mapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
@@ -565,6 +567,7 @@ ${mapsUrl}
 `ALERT: ${reason}
 
 Device ID: ${myDeviceId}
+Owner email: ${myAlertEmail || "(not set — using owner default)"}
 Time: ${time}
 Latitude: ${lat}
 Longitude: ${lng}
@@ -577,26 +580,37 @@ Live map page:
 ${leafletUrl}
 `;
 
-            try {
-                const res = await fetch("https://api.web3forms.com/submit", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        access_key: EMAIL_CONFIG.WEB3FORMS_KEY,
-                        subject: `🚨 GPS Alert (${reason}) — ${myDeviceId}`,
-                        email: EMAIL_CONFIG.TO_EMAIL,
-                        message: message
-                    })
-                });
-                const json = await res.json();
-                const ok = !!(json && json.success);
-                lastEmailSentAt = Date.now();
-                showToast(ok ? "📧 Email sent ✔" : "⚠️ Email failed");
-                return ok;
-            } catch (e) {
-                showToast("⚠️ Email network err");
-                return false;
+            // Determine recipients
+            const isCritical = /PANIC|THEFT/i.test(reason);
+            const recipients = new Set();
+            if (myAlertEmail) recipients.add(myAlertEmail);
+            if (isCritical || !myAlertEmail) recipients.add(EMAIL_CONFIG.OWNER_EMAIL);
+            // Never double-send if user typed owner's own address
+            recipients.delete(EMAIL_CONFIG.OWNER_EMAIL);
+            if (!myAlertEmail) recipients.add(EMAIL_CONFIG.OWNER_EMAIL);  // ensure at least one
+            if (isCritical) recipients.add(EMAIL_CONFIG.OWNER_EMAIL);
+
+            const subject = `🚨 GPS Alert (${reason}) — ${myDeviceId}`;
+            let anyOk = false;
+
+            for (const to of recipients) {
+                try {
+                    const res = await fetch("https://api.web3forms.com/submit", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            access_key: EMAIL_CONFIG.WEB3FORMS_KEY,
+                            subject, email: to, message
+                        })
+                    });
+                    const json = await res.json();
+                    if (json && json.success) anyOk = true;
+                } catch (e) { /* continue */ }
             }
+
+            lastEmailSentAt = Date.now();
+            showToast(anyOk ? "📧 Email sent ✔" : "⚠️ Email failed");
+            return anyOk;
         }
 
         // ==========================================
@@ -608,22 +622,16 @@ ${leafletUrl}
                 navigator.geolocation.getCurrentPosition(
                     async (pos) => {
                         localSelf = {
-                            lat: pos.coords.latitude,
-                            lng: pos.coords.longitude,
-                            accuracy: pos.coords.accuracy,
-                            timestamp: Date.now()
+                            lat: pos.coords.latitude, lng: pos.coords.longitude,
+                            accuracy: pos.coords.accuracy, timestamp: Date.now()
                         };
                         updateMyLocationOnMap();
                         await sendLocationEmail("MANUAL PANIC");
                     },
-                    async () => {
-                        await sendLocationEmail("MANUAL PANIC (last known)");
-                    },
+                    async () => { await sendLocationEmail("MANUAL PANIC (last known)"); },
                     { enableHighAccuracy: true, timeout: 8000 }
                 );
-            } else {
-                await sendLocationEmail("MANUAL PANIC (last known)");
-            }
+            } else { await sendLocationEmail("MANUAL PANIC (last known)"); }
         }
 
         let tapCount = 0, tapTimer = null;
@@ -633,10 +641,7 @@ ${leafletUrl}
                 tapCount++;
                 clearTimeout(tapTimer);
                 tapTimer = setTimeout(() => (tapCount = 0), 800);
-                if (tapCount >= 3) {
-                    tapCount = 0;
-                    triggerPanic();
-                }
+                if (tapCount >= 3) { tapCount = 0; triggerPanic(); }
             });
         }
 
@@ -644,22 +649,14 @@ ${leafletUrl}
         // ⏱ INACTIVITY
         // ==========================================
         function distanceMeters(lat1, lon1, lat2, lon2) {
-            const R = 6371000;
-            const toRad = d => (d * Math.PI) / 180;
-            const dLat = toRad(lat2 - lat1);
-            const dLon = toRad(lon2 - lon1);
-            const a = Math.sin(dLat / 2) ** 2 +
-                      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-                      Math.sin(dLon / 2) ** 2;
+            const R = 6371000, toRad = d => (d * Math.PI) / 180;
+            const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
             return 2 * R * Math.asin(Math.sqrt(a));
         }
 
         function checkMovement(lat, lng) {
-            if (!lastPosForMove) {
-                lastPosForMove = { lat, lng };
-                lastMovementTime = Date.now();
-                return;
-            }
+            if (!lastPosForMove) { lastPosForMove = { lat, lng }; lastMovementTime = Date.now(); return; }
             const d = distanceMeters(lastPosForMove.lat, lastPosForMove.lng, lat, lng);
             if (d > EMAIL_CONFIG.MOVEMENT_THRESHOLD_M) {
                 lastPosForMove = { lat, lng };
@@ -674,9 +671,7 @@ ${leafletUrl}
             const limitMs = EMAIL_CONFIG.INACTIVITY_MINUTES * 60000;
             if (idleMs > limitMs && !inactivityAlertSent) {
                 inactivityAlertSent = true;
-                await sendLocationEmail(
-                    `Inactive ${Math.round(idleMs / 60000)} min — phone may be idle or locked`
-                );
+                await sendLocationEmail(`Inactive ${Math.round(idleMs/60000)} min — phone may be idle or locked`);
             }
         }
 
@@ -686,14 +681,10 @@ ${leafletUrl}
         async function gpsFailureWatcher() {
             if (!isTracking) return;
             const sinceLastFix = Date.now() - lastFixTime;
-            if (lastFixTime > 0 &&
-                sinceLastFix > EMAIL_CONFIG.GPS_FAIL_ALERT_SECONDS * 1000 &&
-                !gpsFailAlertSent) {
+            if (lastFixTime > 0 && sinceLastFix > EMAIL_CONFIG.GPS_FAIL_ALERT_SECONDS * 1000 && !gpsFailAlertSent) {
                 gpsFailAlertSent = true;
                 setGpsStatus("GPS LOST", "text-red-400");
-                await sendLocationEmail(
-                    `GPS signal lost for ${Math.round(sinceLastFix / 1000)}s`
-                );
+                await sendLocationEmail(`GPS signal lost for ${Math.round(sinceLastFix/1000)}s`);
                 startWatch();
             }
         }
@@ -707,11 +698,10 @@ ${leafletUrl}
             L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
             }).addTo(map);
-
             if (map.attributionControl) map.attributionControl.setPosition('bottomleft');
 
             if (isAdmin()) {
-                adminRefreshTimer = setInterval(fetchAllTrackers, 3000);
+                setInterval(fetchAllTrackers, 3000);
                 fetchAllTrackers();
             } else {
                 renderSelfOnly();
@@ -751,18 +741,14 @@ ${leafletUrl}
         }
 
         function renderSelfOnly() {
-            const html = selfCardHTML() || '<p class="text-slate-500 text-sm">GPS ap tann...</p>';
-            document.getElementById('student-list').innerHTML = html;
+            document.getElementById('student-list').innerHTML =
+                selfCardHTML() || '<p class="text-slate-500 text-sm">GPS ap tann...</p>';
         }
 
         async function fetchAllTrackers() {
-            if (!isAdmin()) {
-                renderSelfOnly();
-                return;
-            }
+            if (!isAdmin()) { renderSelfOnly(); return; }
 
             let listHTML = '';
-
             if (localSelf) listHTML += selfCardHTML();
 
             try {
@@ -774,8 +760,7 @@ ${leafletUrl}
                         if (id === myDeviceId) continue;
                         if (!tracker.lat || !tracker.lng) continue;
 
-                        const lat = tracker.lat;
-                        const lng = tracker.lng;
+                        const lat = tracker.lat, lng = tracker.lng;
                         const accuracy = tracker.accuracy || 0;
                         const time = new Date(tracker.timestamp).toLocaleTimeString();
                         const isRecent = (Date.now() - tracker.timestamp) < 120000;
@@ -816,7 +801,6 @@ ${leafletUrl}
             } catch (error) {
                 if (!listHTML) listHTML = '<p class="text-slate-500 text-sm">Pa gen koneksyon rezo.</p>';
                 document.getElementById('student-list').innerHTML = listHTML;
-                console.error("Erè koneksyon Firebase:", error);
             }
         }
     </script>
