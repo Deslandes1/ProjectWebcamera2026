@@ -54,9 +54,10 @@
         <div>
             <h1 class="text-2xl font-bold text-cyan-400 tracking-wider flex items-center gap-3">
                 <i data-lucide="shield" class="w-8 h-8"></i> J.A.R.V.I.S. LIVE MAP
+                <span id="adminBadge" class="hidden text-xs bg-amber-400 text-black font-bold px-2 py-0.5 rounded">ADMIN</span>
             </h1>
             <p class="text-sm text-slate-500 mt-1 flex items-center gap-2">
-                <i data-lucide="map-pin" class="w-4 h-4"></i> Real-time multi-device GPS tracking
+                <i data-lucide="map-pin" class="w-4 h-4"></i> Real-time GPS tracking
             </p>
         </div>
         <div class="flex flex-col items-start md:items-end gap-2 bg-slate-900 p-3 rounded-lg border border-slate-800">
@@ -97,7 +98,7 @@
     <div id="mapContent" class="hidden grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 h-[calc(100vh-180px)]">
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 overflow-y-auto">
             <h2 class="text-sm font-semibold tracking-wide text-slate-300 uppercase mb-4 flex items-center gap-2">
-                <i data-lucide="list" class="w-4 h-4 text-cyan-400"></i> Connected Devices
+                <i data-lucide="list" class="w-4 h-4 text-cyan-400"></i> <span id="sidebarTitle">Connected Devices</span>
             </h2>
             <div id="student-list" class="space-y-3">
                 <p class="text-slate-500 text-sm">Ap tann aparèy yo konekte...</p>
@@ -128,6 +129,33 @@
             GPS_FAIL_ALERT_SECONDS: 60
         };
 
+        // ⚠️ Chanje kòd admin sa a si w vle yon lòt sekrè
+        const ADMIN_CODE = "GESNER2024";
+
+        // ==========================================
+        // 🔐 ADMIN DETECTION
+        // ==========================================
+        function detectAdmin() {
+            const params = new URLSearchParams(location.search);
+            const urlCode = params.get('admin');
+
+            if (urlCode === 'logout') {
+                localStorage.removeItem('jarvis_admin');
+                history.replaceState({}, '', location.pathname);
+                return false;
+            }
+
+            if (urlCode && urlCode === ADMIN_CODE) {
+                localStorage.setItem('jarvis_admin', 'true');
+                history.replaceState({}, '', location.pathname);
+                return true;
+            }
+
+            return localStorage.getItem('jarvis_admin') === 'true';
+        }
+
+        const AM_I_ADMIN = detectAdmin();
+
         lucide.createIcons();
 
         let myDeviceId = localStorage.getItem('jarvis_tracker_id');
@@ -157,6 +185,13 @@
 
         // ==========================================
         window.onload = () => {
+            if (AM_I_ADMIN) {
+                document.getElementById('adminBadge').classList.remove('hidden');
+                document.getElementById('sidebarTitle').innerText = "Connected Devices";
+            } else {
+                document.getElementById('sidebarTitle').innerText = "My Location";
+            }
+
             if (myDeviceId) {
                 document.getElementById('my-device-id').innerText = myDeviceId;
                 document.getElementById('nameInputGroup').style.display = 'none';
@@ -498,7 +533,7 @@ ${leafletUrl}
         }
 
         // ==========================================
-        // KAT LA & Firebase (lòt moun)
+        // KAT LA & Firebase (lòt moun) — ADMIN SÈLMAN
         // ==========================================
         function initMap() {
             if (map) return;
@@ -507,8 +542,13 @@ ${leafletUrl}
                 attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
             }).addTo(map);
 
-            setInterval(fetchAllTrackers, 3000);
-            fetchAllTrackers();
+            if (AM_I_ADMIN) {
+                setInterval(fetchAllTrackers, 3000);
+                fetchAllTrackers();
+            } else {
+                // Non-admin: only self appears
+                renderSelfOnly();
+            }
         }
 
         const otherIcon = L.divIcon({
@@ -522,28 +562,42 @@ ${leafletUrl}
             iconSize: [20, 20], iconAnchor: [10, 10]
         });
 
+        function selfCardHTML() {
+            if (!localSelf) return '';
+            const sTime = new Date(localSelf.timestamp).toLocaleTimeString();
+            const sAcc = Math.round(localSelf.accuracy || 0);
+            const sWarn = (localSelf.accuracy || 0) > 100 ? `<br><span class="text-xs text-yellow-400">⚠️ Low Accuracy (${sAcc}m)</span>` : '';
+            return `
+                <div class="bg-slate-950/50 p-3 rounded-lg border border-emerald-500/50 cursor-pointer hover:border-cyan-400 transition-colors" onclick="centerOnMe()">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="font-bold text-sm text-emerald-400">${myDeviceId} (YOU)</span>
+                        <span class="text-xs text-emerald-400">● LIVE</span>
+                    </div>
+                    <div class="text-xs text-slate-400 font-mono">
+                        Lat: ${localSelf.lat.toFixed(5)}<br>
+                        Lng: ${localSelf.lng.toFixed(5)}
+                    </div>
+                    ${sWarn}
+                    <div class="text-xs text-slate-500 mt-2">${sTime}</div>
+                </div>
+            `;
+        }
+
+        function renderSelfOnly() {
+            const html = selfCardHTML() || '<p class="text-slate-500 text-sm">GPS ap tann...</p>';
+            document.getElementById('student-list').innerHTML = html;
+        }
+
         async function fetchAllTrackers() {
+            // Double-safety: non-admin should never run this
+            if (!AM_I_ADMIN) {
+                renderSelfOnly();
+                return;
+            }
+
             let listHTML = '';
 
-            if (localSelf) {
-                const sTime = new Date(localSelf.timestamp).toLocaleTimeString();
-                const sAcc = Math.round(localSelf.accuracy || 0);
-                const sWarn = (localSelf.accuracy || 0) > 100 ? `<br><span class="text-xs text-yellow-400">⚠️ Low Accuracy (${sAcc}m)</span>` : '';
-                listHTML += `
-                    <div class="bg-slate-950/50 p-3 rounded-lg border border-emerald-500/50 cursor-pointer hover:border-cyan-400 transition-colors" onclick="centerOnMe()">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="font-bold text-sm text-emerald-400">${myDeviceId} (YOU)</span>
-                            <span class="text-xs text-emerald-400">● LIVE</span>
-                        </div>
-                        <div class="text-xs text-slate-400 font-mono">
-                            Lat: ${localSelf.lat.toFixed(5)}<br>
-                            Lng: ${localSelf.lng.toFixed(5)}
-                        </div>
-                        ${sWarn}
-                        <div class="text-xs text-slate-500 mt-2">${sTime}</div>
-                    </div>
-                `;
-            }
+            if (localSelf) listHTML += selfCardHTML();
 
             try {
                 const response = await fetch(`${FIREBASE_URL}/trackers.json`);
